@@ -6,6 +6,8 @@ from typing import Any
 import httpx
 
 BACKEND_URL = os.getenv("BACKEND_URL")
+if not BACKEND_URL:
+    raise RuntimeError("BACKEND_URL is required")
 DEFAULT_TIMEOUT = 30.0
 
 _client: httpx.AsyncClient | None = None

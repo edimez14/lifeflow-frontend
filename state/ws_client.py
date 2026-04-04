@@ -9,6 +9,8 @@ from typing import Any
 import websockets
 
 BACKEND_URL = os.getenv("BACKEND_URL")
+if not BACKEND_URL:
+    raise RuntimeError("BACKEND_URL is required")
 WS_URL = BACKEND_URL.replace("http://", "ws://").replace("https://", "wss://")
 
 _ws_task: asyncio.Task[None] | None = None
@@ -74,7 +76,11 @@ async def _run_connection() -> None:
         ws_path = f"{WS_URL}/ws/{_workspace_id}"
         try:
             async with websockets.connect(ws_path) as websocket:
-                await websocket.send(json.dumps({"type": "workspace.changed", "data": {"workspace_id": _workspace_id}}))
+                message = {
+                    "type": "workspace.changed",
+                    "data": {"workspace_id": _workspace_id},
+                }
+                await websocket.send(json.dumps(message))
                 async for message in websocket:
                     await _dispatch_message(message)
         except Exception:
