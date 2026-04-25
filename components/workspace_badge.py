@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from collections.abc import Callable
+
 import flet as ft
 
 
@@ -10,7 +12,7 @@ class WorkspaceBadge(ft.UserControl):
         self,
         workspace_name: str,
         workspace_color: str,
-        on_click: callable | None = None,
+        on_click: Callable[[ft.ControlEvent], None] | None = None,
     ) -> None:
         super().__init__()
         self.workspace_name = workspace_name

@@ -1,8 +1,9 @@
 from __future__ import annotations
 
+from collections.abc import Callable
+
 import flet as ft
 import httpx
-from collections.abc import Callable
 
 from api.workspaces_api import auth_workspace, list_workspaces
 from state.app_state import app_state
@@ -119,6 +120,7 @@ class WorkspaceSelectorScreen:
             workspace_type = str(workspace.get("workspace_type", "public"))
             color = str(workspace.get("color", "#DDDDDD"))
             icon_name = str(workspace.get("icon", "folder"))
+            icon_value = self._resolve_icon(icon_name)
 
             cards.append(
                 ft.Container(
@@ -130,7 +132,7 @@ class WorkspaceSelectorScreen:
                                 controls=[
                                     ft.Row(
                                         controls=[
-                                            ft.Icon(name=icon_name,
+                                            ft.Icon(icon=icon_value,
                                                     color=color, size=28),
                                             ft.Text(
                                                 name, weight=ft.FontWeight.BOLD, size=18),
@@ -158,6 +160,12 @@ class WorkspaceSelectorScreen:
 
         self.workspace_grid.controls = cards
         self.page.update()
+
+    def _resolve_icon(self, raw_icon_name: str) -> str:
+        """Resolve backend icon string to a valid Flet icon name."""
+
+        icon_key = raw_icon_name.replace("-", "_").strip().upper()
+        return getattr(ft.Icons, icon_key, ft.Icons.FOLDER)
 
     def on_select_workspace(self, workspace_id: str, workspace_name: str, workspace_type: str) -> None:
         """Handle workspace selection."""
