@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import flet as ft
 import httpx
+from collections.abc import Callable
 
 from api.workspaces_api import auth_workspace, list_workspaces
 from state.app_state import app_state
@@ -10,7 +11,7 @@ from state.app_state import app_state
 class WorkspaceSelectorScreen:
     """Render and manage the workspace selector screen."""
 
-    def __init__(self, page: ft.Page, on_authenticated: callable) -> None:
+    def __init__(self, page: ft.Page, on_authenticated: Callable[[], None]) -> None:
         self.page = page
         self.on_authenticated = on_authenticated
         self.workspaces: list[dict] = []
@@ -77,7 +78,6 @@ class WorkspaceSelectorScreen:
 
         return ft.Container(
             expand=True,
-            alignment=ft.alignment.center,
             content=ft.Column(
                 controls=[
                     self.title,
