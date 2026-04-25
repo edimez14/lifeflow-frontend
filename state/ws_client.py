@@ -2,15 +2,13 @@ from __future__ import annotations
 
 import asyncio
 import json
-import os
 from collections.abc import Awaitable, Callable
 from typing import Any
 
 import websockets
 
-BACKEND_URL = os.getenv("BACKEND_URL")
-if not BACKEND_URL:
-    raise RuntimeError("BACKEND_URL is required")
+from config import BACKEND_URL
+
 WS_URL = BACKEND_URL.replace("http://", "ws://").replace("https://", "wss://")
 
 _ws_task: asyncio.Task[None] | None = None
