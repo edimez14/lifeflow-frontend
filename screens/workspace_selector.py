@@ -39,6 +39,14 @@ class WorkspaceSelectorScreen:
             width=320,
         )
         self.password_error = ft.Text("", color=ft.Colors.RED_500)
+        self.private_auth_loading = ft.Row(
+            controls=[
+                ft.ProgressRing(width=16, height=16, stroke_width=2),
+                ft.Text("Validando... / Validating...", size=12),
+            ],
+            spacing=8,
+            visible=False,
+        )
         self.auth_button = ft.ElevatedButton(
             text="Entrar / Enter",
             on_click=self.on_private_auth,
@@ -48,22 +56,20 @@ class WorkspaceSelectorScreen:
             on_click=self.on_cancel_private,
         )
 
-        self.private_auth_box = ft.Container(
-            visible=False,
+        self.private_auth_dialog = ft.AlertDialog(
+            modal=True,
+            title=ft.Text("Workspace privado / Private workspace"),
             content=ft.Column(
                 controls=[
-                    ft.Text("Workspace privado / Private workspace",
-                            weight=ft.FontWeight.BOLD),
                     self.password_field,
                     self.password_error,
-                    ft.Row([self.auth_button, self.cancel_button], spacing=10),
+                    self.private_auth_loading,
                 ],
                 spacing=8,
+                tight=True,
             ),
-            padding=12,
-            border=ft.border.all(1, ft.Colors.GREY_300),
-            border_radius=10,
-            width=360,
+            actions=[self.cancel_button, self.auth_button],
+            actions_alignment=ft.MainAxisAlignment.END,
         )
 
     def build(self) -> ft.Control:
@@ -79,7 +85,6 @@ class WorkspaceSelectorScreen:
                     self.loading_text,
                     self.status_text,
                     self.workspace_grid,
-                    self.private_auth_box,
                 ],
                 width=900,
                 horizontal_alignment=ft.CrossAxisAlignment.CENTER,
@@ -164,7 +169,10 @@ class WorkspaceSelectorScreen:
         if workspace_type == "private":
             self.password_field.value = ""
             self.password_error.value = ""
-            self.private_auth_box.visible = True
+            self.private_auth_loading.visible = False
+            self.auth_button.disabled = False
+            self.page.dialog = self.private_auth_dialog
+            self.private_auth_dialog.open = True
             self.page.update()
             return
 
@@ -186,8 +194,10 @@ class WorkspaceSelectorScreen:
     def on_cancel_private(self, _: ft.ControlEvent) -> None:
         """Hide private workspace auth block."""
 
-        self.private_auth_box.visible = False
+        self.private_auth_dialog.open = False
         self.password_error.value = ""
+        self.private_auth_loading.visible = False
+        self.auth_button.disabled = False
         self.page.update()
 
     async def authenticate_workspace(
@@ -198,8 +208,14 @@ class WorkspaceSelectorScreen:
     ) -> None:
         """Authenticate workspace and update global state."""
 
-        self.status_text.value = "Validando... / Validating..."
-        self.password_error.value = ""
+        is_private_auth = password is not None
+
+        if is_private_auth:
+            self.password_error.value = ""
+            self.private_auth_loading.visible = True
+            self.auth_button.disabled = True
+        else:
+            self.status_text.value = "Validando... / Validating..."
         self.page.update()
 
         try:
@@ -207,7 +223,7 @@ class WorkspaceSelectorScreen:
             app_state.set_workspace(workspace_id, token)
             app_state.set_user_data({"workspace_name": workspace_name})
             app_state.set_screen("workspace_home")
-            self.private_auth_box.visible = False
+            self.private_auth_dialog.open = False
             self.on_authenticated()
         except httpx.HTTPStatusError as exc:
             if exc.response.status_code == 401:
@@ -217,4 +233,8 @@ class WorkspaceSelectorScreen:
             self.page.update()
         except httpx.HTTPError:
             self.status_text.value = "No se pudo conectar / Could not connect"
+            self.page.update()
+        finally:
+            self.private_auth_loading.visible = False
+            self.auth_button.disabled = False
             self.page.update()
