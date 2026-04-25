@@ -47,12 +47,12 @@ class WorkspaceSelectorScreen:
             spacing=8,
             visible=False,
         )
-        self.auth_button = ft.ElevatedButton(
-            text="Entrar / Enter",
+        self.auth_button = ft.Button(
+            content=ft.Text("Entrar / Enter"),
             on_click=self.on_private_auth,
         )
-        self.cancel_button = ft.TextButton(
-            text="Cancelar / Cancel",
+        self.cancel_button = ft.Button(
+            content=ft.Text("Cancelar / Cancel"),
             on_click=self.on_cancel_private,
         )
 
@@ -143,8 +143,8 @@ class WorkspaceSelectorScreen:
                                         else "Privado / Private",
                                         color=ft.Colors.GREY_700,
                                     ),
-                                    ft.ElevatedButton(
-                                        text="Entrar / Enter",
+                                    ft.Button(
+                                        content=ft.Text("Entrar / Enter"),
                                         on_click=lambda e, wid=workspace_id, wname=name, wtype=workspace_type: self.on_select_workspace(
                                             wid, wname, wtype),
                                     ),

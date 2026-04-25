@@ -46,4 +46,4 @@ def main_view(page: ft.Page) -> None:
 
 
 if __name__ == "__main__":
-    ft.app(target=main_view)
+    ft.run(main_view)
