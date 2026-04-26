@@ -6,9 +6,10 @@ from datetime import datetime, timedelta
 import flet as ft
 
 from api.calendar_api import fetch_calendars, fetch_events
+from api.monthly_goals_api import fetch_monthly_goal, save_monthly_goal
 from components.event_card import EventCard
 from state.app_state import app_state
-from api.monthly_goals_api import fetch_monthly_goal, save_monthly_goal
+from state.ws_client import register_handler, unregister_handler
 
 
 HOUR_HEIGHT = 60  # pixels per hour in daily view
@@ -27,8 +28,6 @@ class CalendarScreen:
 
         self.current_week_start = today - timedelta(days=today.weekday())
         self.current_daily_date = today
-
-        # Current year used in annual view (same as month's year to keep sync)
         self.current_annual_year = today.year
 
         self.current_view = "month"  # "month", "week", "day" or "year"
@@ -41,14 +40,36 @@ class CalendarScreen:
         self.grid = ft.Column(spacing=2)
         self.detail_panel = ft.Column(visible=False, width=250)
 
-        self.view = self._build_view()
-
-        # Monthly goals button (only used in month view)
+        # Monthly goals button
         self.goals_btn = ft.IconButton(
             icon=ft.icons.FLAG,
             tooltip="Objetivos del mes",
             on_click=lambda e: self.page.run_task(self._open_monthly_goals),
         )
+
+        self.view = self._build_view()
+        self._register_ws_handlers()
+
+    def _register_ws_handlers(self) -> None:
+        """Register WebSocket event handlers to keep the calendar in sync."""
+        async def on_event_created(data: dict) -> None:
+            await self._load_data()
+
+        async def on_event_updated(data: dict) -> None:
+            await self._load_data()
+
+        async def on_event_deleted(data: dict) -> None:
+            await self._load_data()
+
+        register_handler("event.created", on_event_created)
+        register_handler("event.updated", on_event_updated)
+        register_handler("event.deleted", on_event_deleted)
+
+    def dispose(self) -> None:
+        """Remove WebSocket handlers when the screen is not visible."""
+        unregister_handler("event.created")
+        unregister_handler("event.updated")
+        unregister_handler("event.deleted")
 
     def _build_view(self) -> ft.Control:
         """Build the full calendar layout with view switcher."""
