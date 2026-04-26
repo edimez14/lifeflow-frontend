@@ -6,6 +6,7 @@ from datetime import datetime, timedelta
 import flet as ft
 
 from api.calendar_api import fetch_calendars, fetch_events
+from components.event_card import EventCard
 from state.app_state import app_state
 
 
@@ -555,21 +556,12 @@ class CalendarScreen:
                 ft.Text("Sin eventos", italic=True))
         else:
             for ev in events:
-                title = ev["title"]
-                start = datetime.fromisoformat(ev["start_datetime"])
-                end = datetime.fromisoformat(ev["end_datetime"])
-                time_str = f"{start.strftime('%H:%M')} - {end.strftime('%H:%M')}"
-                self.detail_panel.controls.append(
-                    ft.Container(
-                        ft.Column([
-                            ft.Text(title, weight=ft.FontWeight.BOLD),
-                            ft.Text(time_str, size=12),
-                        ]),
-                        padding=4,
-                        border_radius=4,
-                        bgcolor=ft.colors.GREY_100,
-                        margin=ft.margin.only(bottom=4),
-                    )
+                event_card = EventCard(
+                    event=ev,
+                    cal_colors={},  # pass actual colors if needed
+                    on_edit=lambda e: None,   # placeholder
+                    on_delete=lambda e: None,  # placeholder
                 )
+                self.detail_panel.controls.append(event_card)
         self.detail_panel.visible = True
         self.page.update()
