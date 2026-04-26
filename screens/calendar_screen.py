@@ -8,6 +8,7 @@ import flet as ft
 from api.calendar_api import fetch_calendars, fetch_events
 from components.event_card import EventCard
 from state.app_state import app_state
+from api.monthly_goals_api import fetch_monthly_goal, save_monthly_goal
 
 
 HOUR_HEIGHT = 60  # pixels per hour in daily view
@@ -41,6 +42,13 @@ class CalendarScreen:
         self.detail_panel = ft.Column(visible=False, width=250)
 
         self.view = self._build_view()
+
+        # Monthly goals button (only used in month view)
+        self.goals_btn = ft.IconButton(
+            icon=ft.icons.FLAG,
+            tooltip="Objetivos del mes",
+            on_click=lambda e: self.page.run_task(self._open_monthly_goals),
+        )
 
     def _build_view(self) -> ft.Control:
         """Build the full calendar layout with view switcher."""
@@ -89,25 +97,22 @@ class CalendarScreen:
                 icon=ft.icons.CHEVRON_LEFT, on_click=self._prev_month)
             next_btn = ft.IconButton(
                 icon=ft.icons.CHEVRON_RIGHT, on_click=self._next_month)
-            self.nav_controls.controls = [prev_btn, self.month_label, next_btn]
+            # Place label and goals button together
+            month_header = ft.Row(
+                [self.month_label, self.goals_btn], spacing=5)
+            self.nav_controls.controls = [prev_btn, month_header, next_btn]
         elif self.current_view == "week":
             prev_btn = ft.IconButton(
                 icon=ft.icons.CHEVRON_LEFT, on_click=self._prev_week)
             next_btn = ft.IconButton(
                 icon=ft.icons.CHEVRON_RIGHT, on_click=self._next_week)
             self.nav_controls.controls = [prev_btn, self.week_label, next_btn]
-        elif self.current_view == "day":
+        else:  # day
             prev_btn = ft.IconButton(
                 icon=ft.icons.CHEVRON_LEFT, on_click=self._prev_day)
             next_btn = ft.IconButton(
                 icon=ft.icons.CHEVRON_RIGHT, on_click=self._next_day)
             self.nav_controls.controls = [prev_btn, self.day_label, next_btn]
-        else:  # year
-            prev_btn = ft.IconButton(
-                icon=ft.icons.CHEVRON_LEFT, on_click=self._prev_year)
-            next_btn = ft.IconButton(
-                icon=ft.icons.CHEVRON_RIGHT, on_click=self._next_year)
-            self.nav_controls.controls = [prev_btn, self.year_label, next_btn]
 
     async def _prev_month(self, e: ft.ControlEvent) -> None:
         if self.current_month == 1:
@@ -564,4 +569,69 @@ class CalendarScreen:
                 )
                 self.detail_panel.controls.append(event_card)
         self.detail_panel.visible = True
+        self.page.update()
+
+    async def _open_monthly_goals(self) -> None:
+        """Fetch the current monthly goal and show a bottom sheet to edit it."""
+        goal = await fetch_monthly_goal(
+            app_state.workspace_id, self.current_year, self.current_month
+        )
+
+        self._goal_text_field = ft.TextField(
+            label="Objetivo del mes / Monthly goal",
+            value=goal.get("goal_text", ""),
+            multiline=True,
+            min_lines=2,
+            max_lines=4,
+        )
+        self._action_plan_field = ft.TextField(
+            label="Plan de acción / Action plan",
+            value=goal.get("action_plan", ""),
+            multiline=True,
+            min_lines=2,
+            max_lines=4,
+        )
+
+        save_btn = ft.ElevatedButton(
+            "Guardar / Save", on_click=lambda e: self.page.run_task(self._save_goal))
+        cancel_btn = ft.TextButton(
+            "Cancelar", on_click=lambda e: self._close_goals_panel())
+
+        bottom_sheet = ft.BottomSheet(
+            content=ft.Column(
+                [
+                    ft.Text("Objetivos del mes",
+                            weight=ft.FontWeight.BOLD, size=18),
+                    self._goal_text_field,
+                    self._action_plan_field,
+                    ft.Row([cancel_btn, save_btn],
+                           alignment=ft.MainAxisAlignment.END),
+                ],
+                spacing=10,
+                tight=True,
+                scroll=ft.ScrollMode.AUTO,
+            ),
+            open=True,
+        )
+        self.page.overlay.clear()
+        self.page.overlay.append(bottom_sheet)
+        self.page.update()
+
+    async def _save_goal(self) -> None:
+        """Persist the monthly goal via the API and close the editor."""
+        data = {
+            "goal_text": self._goal_text_field.value,
+            "action_plan": self._action_plan_field.value,
+        }
+        await save_monthly_goal(
+            app_state.workspace_id,
+            self.current_year,
+            self.current_month,
+            data,
+        )
+        self._close_goals_panel()
+
+    def _close_goals_panel(self) -> None:
+        """Remove the monthly goals bottom sheet."""
+        self.page.overlay.clear()
         self.page.update()
