@@ -5,7 +5,7 @@ from collections.abc import Callable
 import flet as ft
 
 
-class WorkspaceBadge(ft.UserControl):
+class WorkspaceBadge(ft.Container):
     """Small badge that shows the active workspace name and color."""
 
     def __init__(
@@ -14,24 +14,16 @@ class WorkspaceBadge(ft.UserControl):
         workspace_color: str,
         on_click: Callable[[ft.ControlEvent], None] | None = None,
     ) -> None:
-        super().__init__()
-        self.workspace_name = workspace_name
-        self.workspace_color = workspace_color
-        self.on_click = on_click
+        label = workspace_name or "Sin workspace / No workspace"
+        color = workspace_color or "#6B7280"
 
-    def build(self) -> ft.Control:
-        """Build the workspace badge control."""
-
-        label = self.workspace_name or "Sin workspace / No workspace"
-        color = self.workspace_color or "#6B7280"
-
-        return ft.Container(
+        super().__init__(
             bgcolor=ft.Colors.GREY_100,
             border=ft.border.all(1, ft.Colors.GREY_300),
             border_radius=12,
             padding=10,
             ink=True,
-            on_click=self.on_click,
+            on_click=on_click,
             content=ft.Row(
                 controls=[
                     ft.Container(

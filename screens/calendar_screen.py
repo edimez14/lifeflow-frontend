@@ -42,7 +42,7 @@ class CalendarScreen:
 
         # Monthly goals button
         self.goals_btn = ft.IconButton(
-            icon=ft.icons.FLAG,
+            icon=ft.Icons.FLAG,
             tooltip="Objetivos del mes",
             on_click=lambda e: self.page.run_task(self._open_monthly_goals),
         )
@@ -73,13 +73,13 @@ class CalendarScreen:
 
     def _build_view(self) -> ft.Control:
         """Build the full calendar layout with view switcher."""
-        month_btn = ft.ElevatedButton(
+        month_btn = ft.Button(
             "Mes", on_click=lambda e: self._switch_view("month"))
-        week_btn = ft.ElevatedButton(
+        week_btn = ft.Button(
             "Semana", on_click=lambda e: self._switch_view("week"))
-        day_btn = ft.ElevatedButton(
+        day_btn = ft.Button(
             "Día", on_click=lambda e: self._switch_view("day"))
-        year_btn = ft.ElevatedButton(
+        year_btn = ft.Button(
             "Año", on_click=lambda e: self._switch_view("year"))
         view_selector = ft.Row(
             [month_btn, week_btn, day_btn,
@@ -106,7 +106,6 @@ class CalendarScreen:
         if view == "day" and self.current_daily_date is None:
             self.current_daily_date = datetime.now()
         if view == "year":
-            # Sync year with monthly view
             self.current_annual_year = self.current_year
         self._update_nav_controls()
         self.page.run_task(self._load_data)
@@ -115,24 +114,23 @@ class CalendarScreen:
         """Set navigation buttons according to current view."""
         if self.current_view == "month":
             prev_btn = ft.IconButton(
-                icon=ft.icons.CHEVRON_LEFT, on_click=self._prev_month)
+                icon=ft.Icons.CHEVRON_LEFT, on_click=self._prev_month)
             next_btn = ft.IconButton(
-                icon=ft.icons.CHEVRON_RIGHT, on_click=self._next_month)
-            # Place label and goals button together
+                icon=ft.Icons.CHEVRON_RIGHT, on_click=self._next_month)
             month_header = ft.Row(
                 [self.month_label, self.goals_btn], spacing=5)
             self.nav_controls.controls = [prev_btn, month_header, next_btn]
         elif self.current_view == "week":
             prev_btn = ft.IconButton(
-                icon=ft.icons.CHEVRON_LEFT, on_click=self._prev_week)
+                icon=ft.Icons.CHEVRON_LEFT, on_click=self._prev_week)
             next_btn = ft.IconButton(
-                icon=ft.icons.CHEVRON_RIGHT, on_click=self._next_week)
+                icon=ft.Icons.CHEVRON_RIGHT, on_click=self._next_week)
             self.nav_controls.controls = [prev_btn, self.week_label, next_btn]
         else:  # day
             prev_btn = ft.IconButton(
-                icon=ft.icons.CHEVRON_LEFT, on_click=self._prev_day)
+                icon=ft.Icons.CHEVRON_LEFT, on_click=self._prev_day)
             next_btn = ft.IconButton(
-                icon=ft.icons.CHEVRON_RIGHT, on_click=self._next_day)
+                icon=ft.Icons.CHEVRON_RIGHT, on_click=self._next_day)
             self.nav_controls.controls = [prev_btn, self.day_label, next_btn]
 
     async def _prev_month(self, e: ft.ControlEvent) -> None:
@@ -229,7 +227,7 @@ class CalendarScreen:
         day_names = ["Lun", "Mar", "Mié", "Jue", "Vie", "Sáb", "Dom"]
         header_row = ft.Row(
             [ft.Container(ft.Text(name, size=12), width=40,
-                          alignment=ft.alignment.center) for name in day_names],
+                          alignment=ft.Alignment(0, 0)) for name in day_names],
             spacing=2,
         )
         self.grid.controls.append(header_row)
@@ -264,7 +262,7 @@ class CalendarScreen:
         hours = list(range(0, 24))
         days_of_week = [start + timedelta(days=i) for i in range(7)]
         day_headers = [ft.Container(ft.Text(day.strftime("%a %d"), size=12, text_align=ft.TextAlign.CENTER),
-                                    width=100, alignment=ft.alignment.center) for day in days_of_week]
+                                    width=100, alignment=ft.Alignment(0, 0)) for day in days_of_week]
 
         empty_corner = ft.Container(width=50)
         header_row = ft.Row([empty_corner] + day_headers, spacing=2,
@@ -275,8 +273,8 @@ class CalendarScreen:
             hour_label = ft.Container(
                 ft.Text(f"{hour:02d}:00", size=10),
                 width=50,
-                alignment=ft.alignment.center_right,
-                padding=ft.padding.only(right=5),
+                alignment=ft.Alignment(0, 0.5),  # center vertically
+                padding=ft.Padding.only(right=5),
             )
             cells = []
             for day in days_of_week:
@@ -305,12 +303,12 @@ class CalendarScreen:
                     ft.Container(
                         ft.Text(f"{hour:02d}:00", size=10),
                         width=50,
-                        alignment=ft.alignment.center_right,
-                        padding=ft.padding.only(right=5),
+                        alignment=ft.Alignment(1, 0.5),  # center_right
+                        padding=ft.Padding.only(right=5),
                     ),
                     ft.Container(
                         border=ft.border.only(
-                            bottom=ft.border.BorderSide(1, ft.colors.GREY_200)),
+                            bottom=ft.border.BorderSide(1, ft.Colors.GREY_200)),
                         expand=True,
                         height=HOUR_HEIGHT,
                     ),
@@ -336,7 +334,7 @@ class CalendarScreen:
                 content=ft.Text(
                     ev["title"],
                     size=12,
-                    color=ft.colors.WHITE,
+                    color=ft.Colors.WHITE,
                     overflow=ft.TextOverflow.ELLIPSIS,
                     max_lines=2,
                 ),
@@ -362,9 +360,7 @@ class CalendarScreen:
         start_dt = datetime(year, 1, 1)
         end_dt = datetime(year, 12, 31, 23, 59, 59)
 
-        # Fetch all events for the year
         events = await fetch_events(app_state.workspace_id, start_dt, end_dt)
-        # Group events by (month, day)
         events_by_date: dict[tuple[int, int], list[dict]] = {}
         for ev in events:
             dt = datetime.fromisoformat(ev["start_datetime"])
@@ -372,16 +368,14 @@ class CalendarScreen:
             events_by_date.setdefault(key, []).append(ev)
 
         self.grid.controls.clear()
-        self.grid.scroll = ft.ScrollMode.AUTO  # allow scrolling if too many rows
+        self.grid.scroll = ft.ScrollMode.AUTO
 
-        # Build mini calendars for each month, arranged in rows of 3 or 4
         months = []
         for month in range(1, 13):
             month_container = self._build_mini_month(
                 year, month, events_by_date, cal_colors)
             months.append(month_container)
 
-        # Create rows of months (3 per row)
         rows = []
         for i in range(0, 12, 3):
             row = ft.Row(months[i:i+3], spacing=10,
@@ -401,7 +395,6 @@ class CalendarScreen:
         month_name = calendar.month_name[month]
         cal_data = calendar.monthcalendar(year, month)
 
-        # Week day headers (short)
         day_headers = ["Lu", "Ma", "Mi", "Ju", "Vi", "Sá", "Do"]
         header_row = ft.Row(
             [ft.Text(h, size=8, text_align=ft.TextAlign.CENTER, width=18)
@@ -410,20 +403,16 @@ class CalendarScreen:
             alignment=ft.MainAxisAlignment.CENTER,
         )
 
-        # Week rows
         week_rows = []
         for week in cal_data:
             day_cells = []
             for day in week:
                 if day == 0:
-                    # empty cell
                     cell = ft.Container(width=18, height=18)
                 else:
                     event_list = events_by_date.get((month, day), [])
-                    # Determine color dot if events exist
                     dot = None
                     if event_list:
-                        # Use color of first event
                         ev = event_list[0]
                         dot_color = ev.get("color") or cal_colors.get(
                             ev["calendar_id"], "#2196F3")
@@ -433,7 +422,6 @@ class CalendarScreen:
                             border_radius=ft.BorderRadius(5, 5, 5, 5),
                         )
 
-                    # Clickable container for the day, navigates to day view
                     day_date = datetime(year, month, day)
                     cell = ft.Container(
                         content=ft.Column(
@@ -447,7 +435,7 @@ class CalendarScreen:
                             tight=True,
                         ),
                         width=22, height=28,
-                        alignment=ft.alignment.center,
+                        alignment=ft.Alignment(0, 0),  # center
                         on_click=lambda e, d=day_date: self._on_annual_day_click(
                             d),
                     )
@@ -456,7 +444,6 @@ class CalendarScreen:
                               alignment=ft.MainAxisAlignment.CENTER)
             week_rows.append(week_row)
 
-        # Combine month name, headers, weeks into a bordered box
         content = ft.Column(
             [
                 ft.Text(month_name, size=11, weight=ft.FontWeight.BOLD,
@@ -470,7 +457,7 @@ class CalendarScreen:
         return ft.Container(
             content=content,
             padding=5,
-            border=ft.border.all(1, ft.colors.GREY_300),
+            border=ft.border.all(1, ft.Colors.GREY_300),
             border_radius=5,
             width=160,
             height=190,
@@ -487,7 +474,7 @@ class CalendarScreen:
     def _build_hour_cell(self, day: datetime, hour: int, events: list[dict], cal_colors: dict[str, str]) -> ft.Container:
         cell_width = 100
         cell_height = 40
-        cell_border = ft.border.all(1, ft.colors.GREY_200)
+        cell_border = ft.border.all(1, ft.Colors.GREY_200)
 
         hour_start = day.replace(hour=hour, minute=0, second=0)
         hour_end = hour_start + timedelta(hours=1)
@@ -508,7 +495,7 @@ class CalendarScreen:
                 ev["calendar_id"], "#2196F3")
             title = ev["title"][:5]
             block = ft.Container(
-                ft.Text(title, size=8, color=ft.colors.WHITE),
+                ft.Text(title, size=8, color=ft.Colors.WHITE),
                 bgcolor=color,
                 padding=2,
                 border_radius=2,
@@ -529,8 +516,8 @@ class CalendarScreen:
     # ------------------------------------------------------------------
     def _build_day_cell(self, date: datetime, events_by_date: dict[str, list[dict]], first: datetime, last: datetime, cal_colors: dict[str, str]) -> ft.Container:
         is_current = first <= date <= last
-        text_color = ft.colors.BLACK if is_current else ft.colors.GREY_400
-        bg_color = ft.colors.WHITE if is_current else ft.colors.GREY_100
+        text_color = ft.Colors.BLACK if is_current else ft.Colors.GREY_400
+        bg_color = ft.Colors.WHITE if is_current else ft.Colors.GREY_100
 
         date_key = date.date().isoformat()
         day_events = events_by_date.get(date_key, [])
@@ -543,7 +530,7 @@ class CalendarScreen:
             color = ev.get("color") or cal_colors.get(
                 ev["calendar_id"], "#2196F3")
             label = ft.Container(
-                ft.Text(ev["title"][:10], size=10, color=ft.colors.WHITE),
+                ft.Text(ev["title"][:10], size=10, color=ft.Colors.WHITE),
                 bgcolor=color,
                 padding=2,
                 border_radius=3,
@@ -552,14 +539,14 @@ class CalendarScreen:
             event_labels.append(label)
         if len(day_events) > 3:
             event_labels.append(
-                ft.Text(f"+{len(day_events)-3}", size=10, color=ft.colors.GREY_600))
+                ft.Text(f"+{len(day_events)-3}", size=10, color=ft.Colors.GREY_600))
 
         cell = ft.Container(
             ft.Column([day_number, *event_labels], spacing=1, tight=True,
                       horizontal_alignment=ft.CrossAxisAlignment.START),
             padding=4,
             bgcolor=bg_color,
-            border=ft.border.all(1, ft.colors.GREY_300),
+            border=ft.border.all(1, ft.Colors.GREY_300),
             border_radius=4,
             width=90,
             height=90,
@@ -584,9 +571,9 @@ class CalendarScreen:
             for ev in events:
                 event_card = EventCard(
                     event=ev,
-                    cal_colors={},  # pass actual colors if needed
-                    on_edit=lambda e: None,   # placeholder
-                    on_delete=lambda e: None,  # placeholder
+                    cal_colors={},
+                    on_edit=lambda e: None,
+                    on_delete=lambda e: None,
                 )
                 self.detail_panel.controls.append(event_card)
         self.detail_panel.visible = True
@@ -613,7 +600,7 @@ class CalendarScreen:
             max_lines=4,
         )
 
-        save_btn = ft.ElevatedButton(
+        save_btn = ft.Button(
             "Guardar / Save", on_click=lambda e: self.page.run_task(self._save_goal))
         cancel_btn = ft.TextButton(
             "Cancelar", on_click=lambda e: self._close_goals_panel())
