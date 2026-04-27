@@ -5,12 +5,16 @@ from datetime import datetime
 import flet as ft
 
 from api.tasks_api import (
+    create_subtask,
     create_task,
     create_task_list,
+    delete_subtask,
     delete_task,
     delete_task_list,
+    list_subtasks,
     list_task_lists,
     list_tasks,
+    update_subtask,
     update_task,
 )
 from components.task_row import TaskRow
@@ -19,7 +23,7 @@ from state.ws_client import register_handler, unregister_handler
 
 
 class TasksScreen:
-    """Tasks screen with lists and daily view."""
+    """Tasks screen with list view, daily view and subtasks UI."""
 
     def __init__(self, page: ft.Page) -> None:
         self.page = page
@@ -27,6 +31,9 @@ class TasksScreen:
         self.selected_list_id: str | None = None
         self.task_lists: list[dict] = []
         self.tasks: list[dict] = []
+
+        self.expanded_task_ids: set[str] = set()
+        self.subtasks_by_task_id: dict[str, list[dict]] = {}
 
         self.lists_column = ft.Column(
             spacing=4, scroll=ft.ScrollMode.AUTO, expand=True)
@@ -118,7 +125,7 @@ class TasksScreen:
         )
 
     def _switch_view(self, view: str) -> None:
-        """Switch between list view and daily view."""
+        """Switch between list and today views."""
         self.current_view = view
         self.page.run_task(self._load_data)
 
@@ -235,17 +242,7 @@ class TasksScreen:
         else:
             self.tasks = await list_tasks(app_state.workspace_id)
 
-        if not self.tasks:
-            self.tasks_column.controls.append(
-                ft.Container(
-                    content=ft.Text("No tasks / No hay tareas", italic=True),
-                    padding=16,
-                )
-            )
-            return
-
-        for task in self.tasks:
-            self.tasks_column.controls.append(self._make_task_row(task))
+        await self._render_task_rows(self.tasks)
 
     async def _build_daily_view(self) -> None:
         """Render daily tasks grouped by list for today."""
@@ -293,8 +290,7 @@ class TasksScreen:
                 )
             )
 
-            for task in items:
-                self.tasks_column.controls.append(self._make_task_row(task))
+            await self._render_task_rows(items)
 
         if self.selected_list_id:
             no_date_items = [
@@ -311,20 +307,90 @@ class TasksScreen:
                         padding=ft.padding.only(top=10, bottom=4),
                     )
                 )
-                for task in no_date_items:
-                    self.tasks_column.controls.append(
-                        self._make_task_row(task))
+                await self._render_task_rows(no_date_items)
 
-    def _make_task_row(self, task: dict) -> TaskRow:
+    async def _render_task_rows(self, items: list[dict]) -> None:
+        """Render task rows, including expanded subtasks."""
+        if not items:
+            self.tasks_column.controls.append(
+                ft.Container(
+                    content=ft.Text("No tasks / No hay tareas", italic=True),
+                    padding=16,
+                )
+            )
+            return
+
+        for task in items:
+            task_id = str(task.get("id", ""))
+            if task_id in self.expanded_task_ids:
+                await self._load_subtasks_for_task(task_id)
+
+            subtasks = self.subtasks_by_task_id.get(task_id, [])
+            completion_percentage = self._calculate_completion_percentage(
+                subtasks)
+
+            self.tasks_column.controls.append(
+                self._make_task_row(
+                    task,
+                    subtasks=subtasks,
+                    is_expanded=task_id in self.expanded_task_ids,
+                    completion_percentage=completion_percentage,
+                )
+            )
+
+    async def _load_subtasks_for_task(self, task_id: str) -> None:
+        """Load subtasks for one task and cache them."""
+        if not app_state.workspace_id:
+            return
+
+        self.subtasks_by_task_id[task_id] = await list_subtasks(app_state.workspace_id, task_id)
+
+    def _calculate_completion_percentage(self, subtasks: list[dict]) -> float:
+        """Calculate completion percentage from subtasks."""
+        if not subtasks:
+            return 0.0
+
+        completed = sum(1 for subtask in subtasks if bool(
+            subtask.get("completed", False)))
+        return (completed / len(subtasks)) * 100
+
+    def _make_task_row(
+        self,
+        task: dict,
+        subtasks: list[dict],
+        is_expanded: bool,
+        completion_percentage: float,
+    ) -> TaskRow:
         """Create a TaskRow with actions wired to this screen."""
         return TaskRow(
             task=task,
+            subtasks=subtasks,
+            is_expanded=is_expanded,
+            completion_percentage=completion_percentage,
+            on_expand=self._handle_expand,
             on_toggle=self._handle_toggle,
             on_start_timer=self._handle_start_timer,
             on_edit=self._handle_edit,
             on_move=self._handle_move,
             on_delete=self._handle_delete,
+            on_subtask_toggle=self._handle_subtask_toggle,
+            on_subtask_add=self._handle_subtask_add,
+            on_subtask_delete=self._handle_subtask_delete,
         )
+
+    def _handle_expand(self, task_id: str) -> None:
+        """Toggle expand state of one task row."""
+        self.page.run_task(self._toggle_expand, task_id)
+
+    async def _toggle_expand(self, task_id: str) -> None:
+        """Async expand/collapse with lazy subtasks load."""
+        if task_id in self.expanded_task_ids:
+            self.expanded_task_ids.remove(task_id)
+        else:
+            self.expanded_task_ids.add(task_id)
+            await self._load_subtasks_for_task(task_id)
+
+        await self._load_data()
 
     def _handle_toggle(self, task_id: str, is_completed: bool) -> None:
         """Handle checkbox toggle from row component."""
@@ -353,6 +419,19 @@ class TasksScreen:
         """Handle delete action from row component."""
         self.page.run_task(self._delete_task, task_id)
 
+    def _handle_subtask_toggle(self, task_id: str, subtask_id: str, is_completed: bool) -> None:
+        """Handle subtask checkbox toggle from row component."""
+        self.page.run_task(self._toggle_subtask_status,
+                           task_id, subtask_id, is_completed)
+
+    def _handle_subtask_add(self, task_id: str, title: str) -> None:
+        """Handle inline subtask creation from row component."""
+        self.page.run_task(self._create_inline_subtask, task_id, title)
+
+    def _handle_subtask_delete(self, task_id: str, subtask_id: str) -> None:
+        """Handle subtask delete from row component."""
+        self.page.run_task(self._delete_inline_subtask, task_id, subtask_id)
+
     async def _select_list(self, list_id: str) -> None:
         """Select a list and reload."""
         self.selected_list_id = list_id
@@ -373,6 +452,8 @@ class TasksScreen:
             return
 
         await delete_task(app_state.workspace_id, task_id)
+        self.expanded_task_ids.discard(task_id)
+        self.subtasks_by_task_id.pop(task_id, None)
         await self._load_data()
 
     async def _delete_list(self, list_id: str) -> None:
@@ -385,4 +466,44 @@ class TasksScreen:
         if self.selected_list_id == list_id:
             self.selected_list_id = None
 
+        await self._load_data()
+
+    async def _toggle_subtask_status(self, task_id: str, subtask_id: str, is_completed: bool) -> None:
+        """Update subtask completion status."""
+        if not app_state.workspace_id:
+            return
+
+        await update_subtask(
+            app_state.workspace_id,
+            task_id,
+            subtask_id,
+            completed=is_completed,
+        )
+        await self._load_subtasks_for_task(task_id)
+        await self._load_data()
+
+    async def _create_inline_subtask(self, task_id: str, title: str) -> None:
+        """Create inline subtask for expanded task."""
+        if not app_state.workspace_id:
+            return
+
+        current_subtasks = self.subtasks_by_task_id.get(task_id, [])
+        next_order = len(current_subtasks)
+        await create_subtask(
+            app_state.workspace_id,
+            task_id,
+            title=title,
+            completed=False,
+            order=next_order,
+        )
+        await self._load_subtasks_for_task(task_id)
+        await self._load_data()
+
+    async def _delete_inline_subtask(self, task_id: str, subtask_id: str) -> None:
+        """Delete one subtask from expanded task."""
+        if not app_state.workspace_id:
+            return
+
+        await delete_subtask(app_state.workspace_id, task_id, subtask_id)
+        await self._load_subtasks_for_task(task_id)
         await self._load_data()

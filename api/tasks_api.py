@@ -61,7 +61,7 @@ async def list_tasks(
         params["priority"] = priority
     if due_date:
         params["due_date"] = due_date
-    
+
     response = await http_client.get(f"/workspaces/{workspace_id}/tasks", params=params)
     response.raise_for_status()
     return response.json()
@@ -83,7 +83,7 @@ async def create_task(
         payload["priority"] = priority
     if due_date:
         payload["due_date"] = due_date
-    
+
     response = await http_client.post(f"/workspaces/{workspace_id}/tasks", json=payload)
     response.raise_for_status()
     return response.json()
@@ -110,7 +110,7 @@ async def update_task(
         payload["due_date"] = due_date
     if status is not None:
         payload["status"] = status
-    
+
     response = await http_client.put(f"/workspaces/{workspace_id}/tasks/{task_id}", json=payload)
     response.raise_for_status()
     return response.json()
@@ -126,4 +126,63 @@ async def reorder_tasks(workspace_id: str, reorders: list[dict]) -> None:
     """Reorder multiple tasks."""
     payload = {"reorders": reorders}
     response = await http_client.post(f"/workspaces/{workspace_id}/tasks/reorder", json=payload)
+    response.raise_for_status()
+
+
+# ---------- SubTasks ----------
+
+
+async def list_subtasks(workspace_id: str, task_id: str) -> list[dict]:
+    """Get all subtasks for one task."""
+    response = await http_client.get(f"/workspaces/{workspace_id}/tasks/{task_id}/subtasks")
+    response.raise_for_status()
+    return response.json()
+
+
+async def create_subtask(
+    workspace_id: str,
+    task_id: str,
+    title: str,
+    completed: bool = False,
+    order: int = 0,
+) -> dict:
+    """Create a subtask for one task."""
+    payload = {
+        "title": title,
+        "completed": completed,
+        "order": order,
+    }
+    response = await http_client.post(f"/workspaces/{workspace_id}/tasks/{task_id}/subtasks", json=payload)
+    response.raise_for_status()
+    return response.json()
+
+
+async def update_subtask(
+    workspace_id: str,
+    task_id: str,
+    subtask_id: str,
+    title: str | None = None,
+    completed: bool | None = None,
+    order: int | None = None,
+) -> dict:
+    """Update one subtask."""
+    payload = {}
+    if title is not None:
+        payload["title"] = title
+    if completed is not None:
+        payload["completed"] = completed
+    if order is not None:
+        payload["order"] = order
+
+    response = await http_client.put(
+        f"/workspaces/{workspace_id}/tasks/{task_id}/subtasks/{subtask_id}",
+        json=payload,
+    )
+    response.raise_for_status()
+    return response.json()
+
+
+async def delete_subtask(workspace_id: str, task_id: str, subtask_id: str) -> None:
+    """Delete one subtask."""
+    response = await http_client.delete(f"/workspaces/{workspace_id}/tasks/{task_id}/subtasks/{subtask_id}")
     response.raise_for_status()
