@@ -118,6 +118,8 @@ class TasksScreen:
         def on_confirm(e: ft.ControlEvent) -> None:
             self.page.run_task(self._create_new_list)
 
+            self.current_view: str = "lists"  # "lists" or "today"
+
         def on_cancel(e: ft.ControlEvent) -> None:
             self.page.close(dlg)
 
