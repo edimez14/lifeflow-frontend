@@ -527,7 +527,8 @@ class TasksScreen:
             return
 
         if "subtask_id" in data:
-            self._apply_subtask_delete(task_id, str(data.get("subtask_id") or ""))
+            self._apply_subtask_delete(
+                task_id, str(data.get("subtask_id") or ""))
             await self._redraw_task_row(task_id)
             return
 
@@ -571,7 +572,8 @@ class TasksScreen:
 
     def _remove_task_from_memory(self, task_id: str) -> None:
         """Remove one task from local list memory."""
-        self.tasks = [task for task in self.tasks if str(task.get("id")) != task_id]
+        self.tasks = [task for task in self.tasks if str(
+            task.get("id")) != task_id]
         self.expanded_task_ids.discard(task_id)
         self.subtasks_by_task_id.pop(task_id, None)
 
@@ -610,7 +612,8 @@ class TasksScreen:
         if old_row is None:
             return
 
-        task = next((item for item in self.tasks if str(item.get("id")) == task_id), None)
+        task = next((item for item in self.tasks if str(
+            item.get("id")) == task_id), None)
         if task is None:
             self._remove_task_row_control(task_id)
             self.page.update()
@@ -638,4 +641,5 @@ class TasksScreen:
         if row is None:
             return
 
-        self.tasks_column.controls = [control for control in self.tasks_column.controls if control is not row]
+        self.tasks_column.controls = [
+            control for control in self.tasks_column.controls if control is not row]
