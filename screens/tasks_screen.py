@@ -34,6 +34,7 @@ class TasksScreen:
 
         self.expanded_task_ids: set[str] = set()
         self.subtasks_by_task_id: dict[str, list[dict]] = {}
+        self.task_row_controls: dict[str, TaskRow] = {}
 
         self.lists_column = ft.Column(
             spacing=4, scroll=ft.ScrollMode.AUTO, expand=True)
@@ -55,7 +56,7 @@ class TasksScreen:
             await self._load_data()
 
         async def on_task_updated(data: dict) -> None:
-            await self._load_data()
+            await self._handle_task_updated_event(data)
 
         register_handler("task_list.updated", on_task_list_updated)
         register_handler("task.updated", on_task_updated)
@@ -233,6 +234,7 @@ class TasksScreen:
     async def _build_list_view(self) -> None:
         """Render tasks for selected list."""
         self.tasks_column.controls.clear()
+        self.task_row_controls.clear()
 
         if not app_state.workspace_id:
             return
@@ -247,6 +249,7 @@ class TasksScreen:
     async def _build_daily_view(self) -> None:
         """Render daily tasks grouped by list for today."""
         self.tasks_column.controls.clear()
+        self.task_row_controls.clear()
 
         if not app_state.workspace_id:
             return
@@ -337,6 +340,7 @@ class TasksScreen:
                     completion_percentage=completion_percentage,
                 )
             )
+            self.task_row_controls[task_id] = self.tasks_column.controls[-1]
 
     async def _load_subtasks_for_task(self, task_id: str) -> None:
         """Load subtasks for one task and cache them."""
@@ -507,3 +511,131 @@ class TasksScreen:
         await delete_subtask(app_state.workspace_id, task_id, subtask_id)
         await self._load_subtasks_for_task(task_id)
         await self._load_data()
+
+    async def _handle_task_updated_event(self, data: dict) -> None:
+        """Apply websocket task updates without reloading all rows."""
+        if not isinstance(data, dict):
+            return
+
+        task_id = str(data.get("task_id") or data.get("id") or "")
+        if not task_id:
+            return
+
+        if "subtask" in data:
+            await self._apply_subtask_upsert(task_id, data["subtask"])
+            await self._redraw_task_row(task_id)
+            return
+
+        if "subtask_id" in data:
+            self._apply_subtask_delete(task_id, str(data.get("subtask_id") or ""))
+            await self._redraw_task_row(task_id)
+            return
+
+        if self._is_task_payload(data):
+            self._upsert_task_in_memory(data)
+            await self._redraw_task_row(task_id)
+            return
+
+        self._remove_task_from_memory(task_id)
+        self._remove_task_row_control(task_id)
+        self.page.update()
+
+    def _is_task_payload(self, data: dict) -> bool:
+        """Detect if websocket payload contains full/partial task fields."""
+        task_fields = {
+            "title",
+            "status",
+            "priority",
+            "due_date",
+            "description",
+            "task_list_id",
+            "project_id",
+            "order",
+            "category_id",
+        }
+        return any(field in data for field in task_fields)
+
+    def _upsert_task_in_memory(self, data: dict) -> None:
+        """Update one task in local list memory."""
+        task_id = str(data.get("id") or "")
+        if not task_id:
+            return
+
+        for index, task in enumerate(self.tasks):
+            if str(task.get("id")) == task_id:
+                merged = {**task, **data}
+                self.tasks[index] = merged
+                return
+
+        self.tasks.append(data)
+
+    def _remove_task_from_memory(self, task_id: str) -> None:
+        """Remove one task from local list memory."""
+        self.tasks = [task for task in self.tasks if str(task.get("id")) != task_id]
+        self.expanded_task_ids.discard(task_id)
+        self.subtasks_by_task_id.pop(task_id, None)
+
+    async def _apply_subtask_upsert(self, task_id: str, subtask: dict) -> None:
+        """Insert or update one subtask in local cache."""
+        if not isinstance(subtask, dict):
+            return
+
+        current = list(self.subtasks_by_task_id.get(task_id, []))
+        subtask_id = str(subtask.get("id") or "")
+        if not subtask_id:
+            return
+
+        updated = False
+        for index, item in enumerate(current):
+            if str(item.get("id")) == subtask_id:
+                current[index] = {**item, **subtask}
+                updated = True
+                break
+
+        if not updated:
+            current.append(subtask)
+
+        self.subtasks_by_task_id[task_id] = current
+
+    def _apply_subtask_delete(self, task_id: str, subtask_id: str) -> None:
+        """Delete one subtask from local cache."""
+        current = self.subtasks_by_task_id.get(task_id, [])
+        self.subtasks_by_task_id[task_id] = [
+            item for item in current if str(item.get("id")) != subtask_id
+        ]
+
+    async def _redraw_task_row(self, task_id: str) -> None:
+        """Redraw only one task row control in the current view."""
+        old_row = self.task_row_controls.get(task_id)
+        if old_row is None:
+            return
+
+        task = next((item for item in self.tasks if str(item.get("id")) == task_id), None)
+        if task is None:
+            self._remove_task_row_control(task_id)
+            self.page.update()
+            return
+
+        subtasks = self.subtasks_by_task_id.get(task_id, [])
+        completion_percentage = self._calculate_completion_percentage(subtasks)
+        new_row = self._make_task_row(
+            task,
+            subtasks=subtasks,
+            is_expanded=task_id in self.expanded_task_ids,
+            completion_percentage=completion_percentage,
+        )
+
+        for index, control in enumerate(self.tasks_column.controls):
+            if control is old_row:
+                self.tasks_column.controls[index] = new_row
+                self.task_row_controls[task_id] = new_row
+                self.page.update()
+                return
+
+    def _remove_task_row_control(self, task_id: str) -> None:
+        """Remove one row control from tasks column."""
+        row = self.task_row_controls.pop(task_id, None)
+        if row is None:
+            return
+
+        self.tasks_column.controls = [control for control in self.tasks_column.controls if control is not row]
