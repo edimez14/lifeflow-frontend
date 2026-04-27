@@ -1,7 +1,8 @@
 from __future__ import annotations
 
-import flet as ft
 from datetime import datetime
+
+import flet as ft
 
 from api.tasks_api import (
     create_task,
@@ -12,41 +13,37 @@ from api.tasks_api import (
     list_tasks,
     update_task,
 )
+from components.task_row import TaskRow
 from state.app_state import app_state
 from state.ws_client import register_handler, unregister_handler
 
 
-# Priority color mapping
-PRIORITY_COLORS = {
-    "urgent": "#EF5350",    # Red
-    "important": "#FFA726",  # Orange
-    "normal": "#42A5F5",     # Blue
-    "low": "#66BB6A",        # Green
-}
-
-
 class TasksScreen:
-    """Tasks screen with lists sidebar and task list view."""
+    """Tasks screen with lists and daily view."""
 
     def __init__(self, page: ft.Page) -> None:
         self.page = page
+        self.current_view: str = "lists"
         self.selected_list_id: str | None = None
         self.task_lists: list[dict] = []
         self.tasks: list[dict] = []
 
-        # UI controls
-        self.lists_column = ft.Column(spacing=2, scroll=ft.ScrollMode.AUTO)
+        self.lists_column = ft.Column(
+            spacing=4, scroll=ft.ScrollMode.AUTO, expand=True)
         self.tasks_column = ft.Column(
             spacing=2, scroll=ft.ScrollMode.AUTO, expand=True)
-        self.new_task_input = ft.TextField(label="Nueva tarea", expand=True)
-        self.list_name_input = ft.TextField(label="Nombre de la lista")
+        self.new_task_input = ft.TextField(
+            label="New task / Nueva tarea", expand=True)
+        self.list_name_input = ft.TextField(
+            label="List name / Nombre de lista")
 
         self.view = self._build_view()
         self._register_ws_handlers()
         self.page.run_task(self._load_data)
 
     def _register_ws_handlers(self) -> None:
-        """Register WebSocket handlers for task updates."""
+        """Register handlers for task events."""
+
         async def on_task_list_updated(data: dict) -> None:
             await self._load_data()
 
@@ -57,271 +54,335 @@ class TasksScreen:
         register_handler("task.updated", on_task_updated)
 
     def dispose(self) -> None:
-        """Clean up WebSocket handlers."""
+        """Remove websocket handlers."""
         unregister_handler("task_list.updated")
         unregister_handler("task.updated")
 
     def _build_view(self) -> ft.Control:
-        """Build the main tasks view with sidebar and task area."""
-        # Sidebar header
+        """Build main layout."""
         sidebar_header = ft.Row(
-            [ft.Text("Listas", weight=ft.FontWeight.BOLD, size=14)],
+            controls=[
+                ft.Text("Lists / Listas", weight=ft.FontWeight.BOLD, size=14),
+                ft.IconButton(
+                    icon=ft.Icons.ADD,
+                    tooltip="Create list",
+                    on_click=self._show_new_list_dialog,
+                ),
+            ],
             alignment=ft.MainAxisAlignment.SPACE_BETWEEN,
         )
 
-        # Add button for new list
-        add_list_btn = ft.IconButton(
-            icon=ft.Icons.ADD,
-            tooltip="Nueva lista",
-            on_click=self._show_new_list_dialog,
-        )
-        sidebar_header.controls.append(add_list_btn)
-
-        # Main area header
-        main_header = ft.Row(
-            [ft.Text("Tareas", weight=ft.FontWeight.BOLD, size=14)],
-            expand=True,
+        view_selector = ft.Row(
+            controls=[
+                ft.TextButton("Lists / Listas",
+                              on_click=lambda e: self._switch_view("lists")),
+                ft.TextButton(
+                    "Today / Hoy", on_click=lambda e: self._switch_view("today")),
+            ],
+            spacing=6,
         )
 
-        # Bottom bar for adding tasks
         add_task_row = ft.Row(
-            [
+            controls=[
                 self.new_task_input,
-                ft.IconButton(
-                    icon=ft.Icons.ADD_CIRCLE,
-                    on_click=self._add_task,
-                ),
+                ft.IconButton(icon=ft.Icons.ADD_CIRCLE,
+                              on_click=self._add_task),
             ],
-            spacing=5,
+            spacing=6,
         )
 
-        # Layout: sidebar on left, main area on right
-        layout = ft.Row(
-            [
-                ft.Column(
-                    [sidebar_header, self.lists_column],
-                    width=200,
+        return ft.Row(
+            controls=[
+                ft.Container(
+                    width=240,
+                    padding=10,
+                    content=ft.Column(
+                        controls=[sidebar_header, self.lists_column],
+                        spacing=8,
+                        expand=True,
+                    ),
                 ),
-                ft.VerticalDivider(),
-                ft.Column(
-                    [main_header, self.tasks_column, add_task_row],
+                ft.VerticalDivider(width=1),
+                ft.Container(
                     expand=True,
+                    padding=10,
+                    content=ft.Column(
+                        controls=[view_selector,
+                                  self.tasks_column, add_task_row],
+                        spacing=10,
+                        expand=True,
+                    ),
                 ),
             ],
             expand=True,
         )
 
-        return layout
+    def _switch_view(self, view: str) -> None:
+        """Switch between list view and daily view."""
+        self.current_view = view
+        self.page.run_task(self._load_data)
 
     def _show_new_list_dialog(self, e: ft.ControlEvent) -> None:
-        """Show dialog to create new task list."""
-        def on_confirm(e: ft.ControlEvent) -> None:
+        """Open dialog for list creation."""
+
+        def on_confirm(_: ft.ControlEvent) -> None:
             self.page.run_task(self._create_new_list)
+            dialog.open = False
+            self.page.update()
 
-            self.current_view: str = "lists"  # "lists" or "today"
+        def on_cancel(_: ft.ControlEvent) -> None:
+            dialog.open = False
+            self.page.update()
 
-        def on_cancel(e: ft.ControlEvent) -> None:
-            self.page.close(dlg)
-
-        dlg = ft.AlertDialog(
-            title=ft.Text("Nueva lista de tareas"),
-            content=ft.Container(
-                self.list_name_input,
-                padding=10,
-            ),
+        dialog = ft.AlertDialog(
+            title=ft.Text("New list / Nueva lista"),
+            content=self.list_name_input,
             actions=[
-                ft.TextButton("Crear", on_click=on_confirm),
-                ft.TextButton("Cancelar", on_click=on_cancel),
+                ft.TextButton("Create", on_click=on_confirm),
+                ft.TextButton("Cancel", on_click=on_cancel),
             ],
         )
-        self.page.dialog = dlg
-        dlg.open = True
+
+        self.page.dialog = dialog
+        dialog.open = True
         self.page.update()
 
     async def _create_new_list(self) -> None:
-        """Create a new task list."""
-        name = self.list_name_input.value.strip()
+        """Create a task list in current workspace."""
+        if not app_state.workspace_id:
+            return
+
+        name = (self.list_name_input.value or "").strip()
         if not name:
             return
 
         await create_task_list(app_state.workspace_id, name)
         self.list_name_input.value = ""
         await self._load_data()
-        self.page.update()
 
     async def _add_task(self, e: ft.ControlEvent) -> None:
-        """Add a new task to the selected list."""
-        if not self.selected_list_id:
+        """Create a task in selected list."""
+        if not app_state.workspace_id or not self.selected_list_id:
             return
 
-        title = self.new_task_input.value.strip()
+        title = (self.new_task_input.value or "").strip()
         if not title:
             return
 
-        await create_task(
-            app_state.workspace_id,
-            self.selected_list_id,
-            title,
-        )
+        await create_task(app_state.workspace_id, self.selected_list_id, title)
         self.new_task_input.value = ""
         await self._load_data()
-        self.page.update()
 
     async def _load_data(self) -> None:
         """Load task lists and tasks."""
+        if not app_state.workspace_id:
+            return
+
         try:
             self.task_lists = await list_task_lists(app_state.workspace_id)
+
+            if self.selected_list_id is None and self.task_lists:
+                self.selected_list_id = str(self.task_lists[0]["id"])
+
             await self._build_lists_sidebar()
 
-            # Load tasks if a list is selected
-            if self.selected_list_id:
-                self.tasks = await list_tasks(
-                    app_state.workspace_id,
-                    list_id=self.selected_list_id,
-                )
+            if self.current_view == "today":
+                await self._build_daily_view()
             else:
-                self.tasks = await list_tasks(app_state.workspace_id)
-
-            await self._build_tasks_list()
-        except Exception:
-            pass
+                await self._build_list_view()
         finally:
             self.page.update()
 
     async def _build_lists_sidebar(self) -> None:
-        """Build sidebar with task lists."""
+        """Render all lists in sidebar."""
         self.lists_column.controls.clear()
 
         for task_list in self.task_lists:
-            list_item = ft.Container(
+            list_id = str(task_list["id"])
+            is_selected = self.selected_list_id == list_id
+
+            tile = ft.Container(
+                padding=8,
+                border_radius=6,
+                bgcolor="#E8F0FE" if is_selected else task_list.get(
+                    "color", "#F4F4F4"),
                 content=ft.Row(
-                    [
-                        ft.Text(task_list["name"], expand=True),
+                    controls=[
+                        ft.Text(str(task_list.get("name", "")), expand=True),
                         ft.IconButton(
                             icon=ft.Icons.DELETE_OUTLINE,
                             icon_size=16,
-                            on_click=lambda e, lid=task_list["id"]: self.page.run_task(
-                                self._delete_list, lid
-                            ),
+                            on_click=lambda e, lid=list_id: self.page.run_task(
+                                self._delete_list, lid),
                         ),
                     ],
-                    spacing=5,
+                    spacing=6,
                 ),
-                padding=8,
-                bgcolor=task_list.get("color", "#F0F0F0"),
-                border_radius=4,
-                on_click=lambda e, lid=task_list["id"]: self.page.run_task(
-                    self._select_list, lid
-                ),
+                on_click=lambda e, lid=list_id: self.page.run_task(
+                    self._select_list, lid),
             )
+            self.lists_column.controls.append(tile)
 
-            self.lists_column.controls.append(list_item)
-
-    async def _build_tasks_list(self) -> None:
-        """Build the tasks list in the main area."""
+    async def _build_list_view(self) -> None:
+        """Render tasks for selected list."""
         self.tasks_column.controls.clear()
+
+        if not app_state.workspace_id:
+            return
+
+        if self.selected_list_id:
+            self.tasks = await list_tasks(app_state.workspace_id, list_id=self.selected_list_id)
+        else:
+            self.tasks = await list_tasks(app_state.workspace_id)
 
         if not self.tasks:
             self.tasks_column.controls.append(
                 ft.Container(
-                    ft.Text("No hay tareas", italic=True),
-                    padding=20,
-                ),
+                    content=ft.Text("No tasks / No hay tareas", italic=True),
+                    padding=16,
+                )
             )
             return
 
         for task in self.tasks:
-            priority = task.get("priority", "normal")
-            color = PRIORITY_COLORS.get(priority, "#42A5F5")
-            status = task.get("status", "pending")
+            self.tasks_column.controls.append(self._make_task_row(task))
 
-            # Task row
-            task_row = ft.Container(
-                content=ft.Row(
-                    [
-                        # Checkbox for toggling status
-                        ft.Checkbox(
-                            value=(status == "completed"),
-                            on_change=lambda e, tid=task["id"]: self.page.run_task(
-                                self._toggle_task_status, tid
-                            ),
-                        ),
-                        # Title and details
-                        ft.Column(
-                            [
-                                ft.Text(
-                                    task["title"],
-                                    size=13,
-                                    weight=ft.FontWeight.W500,
-                                ),
-                                ft.Text(
-                                    task.get("description", ""),
-                                    size=11,
-                                    color="gray",
-                                ) if task.get("description") else ft.SizedBox(height=0),
-                            ],
-                            expand=True,
-                            spacing=2,
-                        ),
-                        # Priority badge
-                        ft.Container(
-                            ft.Text(priority, size=9, color="white"),
-                            padding=ft.Padding(4, 2, 4, 2),
-                            bgcolor=color,
-                            border_radius=3,
-                        ),
-                        # Due date
-                        ft.Text(
-                            task.get("due_date", ""),
-                            size=10,
-                            width=80,
-                        ) if task.get("due_date") else ft.SizedBox(width=80),
-                        # Delete button
-                        ft.IconButton(
-                            icon=ft.Icons.DELETE_OUTLINE,
-                            icon_size=16,
-                            on_click=lambda e, tid=task["id"]: self.page.run_task(
-                                self._delete_task, tid
-                            ),
-                        ),
-                    ],
-                    spacing=10,
-                    vertical_alignment=ft.CrossAxisAlignment.CENTER,
-                ),
-                padding=8,
-                border_radius=4,
-                border=ft.border.all(1, "#E0E0E0"),
+    async def _build_daily_view(self) -> None:
+        """Render daily tasks grouped by list for today."""
+        self.tasks_column.controls.clear()
+
+        if not app_state.workspace_id:
+            return
+
+        all_tasks = await list_tasks(app_state.workspace_id)
+        today_str = datetime.now().date().isoformat()
+
+        tasks_today: dict[str, list[dict]] = {}
+        for task in all_tasks:
+            due_date = str(task.get("due_date") or "")
+            if due_date != today_str:
+                continue
+
+            list_id = str(task.get("task_list_id") or "")
+            tasks_today.setdefault(list_id, []).append(task)
+
+        if not tasks_today:
+            self.tasks_column.controls.append(
+                ft.Container(
+                    content=ft.Text(
+                        "No tasks for today / No hay tareas para hoy", italic=True),
+                    padding=16,
+                )
+            )
+            return
+
+        for task_list in self.task_lists:
+            list_id = str(task_list["id"])
+            items = tasks_today.get(list_id, [])
+            if not items:
+                continue
+
+            self.tasks_column.controls.append(
+                ft.Container(
+                    content=ft.Text(
+                        f"{task_list.get('name', 'List')} ({len(items)})",
+                        weight=ft.FontWeight.BOLD,
+                        size=13,
+                    ),
+                    padding=ft.padding.only(top=8, bottom=4),
+                )
             )
 
-            self.tasks_column.controls.append(task_row)
+            for task in items:
+                self.tasks_column.controls.append(self._make_task_row(task))
+
+        if self.selected_list_id:
+            no_date_items = [
+                task
+                for task in all_tasks
+                if str(task.get("task_list_id") or "") == self.selected_list_id
+                and not task.get("due_date")
+            ]
+            if no_date_items:
+                self.tasks_column.controls.append(
+                    ft.Container(
+                        content=ft.Text("No date / Sin fecha",
+                                        weight=ft.FontWeight.BOLD, size=13),
+                        padding=ft.padding.only(top=10, bottom=4),
+                    )
+                )
+                for task in no_date_items:
+                    self.tasks_column.controls.append(
+                        self._make_task_row(task))
+
+    def _make_task_row(self, task: dict) -> TaskRow:
+        """Create a TaskRow with actions wired to this screen."""
+        return TaskRow(
+            task=task,
+            on_toggle=self._handle_toggle,
+            on_start_timer=self._handle_start_timer,
+            on_edit=self._handle_edit,
+            on_move=self._handle_move,
+            on_delete=self._handle_delete,
+        )
+
+    def _handle_toggle(self, task_id: str, is_completed: bool) -> None:
+        """Handle checkbox toggle from row component."""
+        self.page.run_task(self._toggle_task_status, task_id, is_completed)
+
+    def _handle_start_timer(self, task: dict) -> None:
+        """Handle start timer action from row component."""
+        self.page.snack_bar = ft.SnackBar(
+            ft.Text("Timer module is coming soon"))
+        self.page.snack_bar.open = True
+        self.page.update()
+
+    def _handle_edit(self, task: dict) -> None:
+        """Handle edit action from row component."""
+        self.page.snack_bar = ft.SnackBar(ft.Text("Edit task action"))
+        self.page.snack_bar.open = True
+        self.page.update()
+
+    def _handle_move(self, task: dict) -> None:
+        """Handle move action from row component."""
+        self.page.snack_bar = ft.SnackBar(ft.Text("Move task action"))
+        self.page.snack_bar.open = True
+        self.page.update()
+
+    def _handle_delete(self, task_id: str) -> None:
+        """Handle delete action from row component."""
+        self.page.run_task(self._delete_task, task_id)
 
     async def _select_list(self, list_id: str) -> None:
-        """Select a task list and load its tasks."""
+        """Select a list and reload."""
         self.selected_list_id = list_id
         await self._load_data()
 
-    async def _toggle_task_status(self, task_id: str) -> None:
-        """Toggle task status between pending and completed."""
-        task = next((t for t in self.tasks if t["id"] == task_id), None)
-        if not task:
+    async def _toggle_task_status(self, task_id: str, is_completed: bool) -> None:
+        """Update task status on API."""
+        if not app_state.workspace_id:
             return
 
-        new_status = "completed" if task["status"] == "pending" else "pending"
-        await update_task(
-            app_state.workspace_id,
-            task_id,
-            status=new_status,
-        )
+        status_value = "completed" if is_completed else "pending"
+        await update_task(app_state.workspace_id, task_id, status=status_value)
         await self._load_data()
 
     async def _delete_task(self, task_id: str) -> None:
-        """Delete a task."""
+        """Delete task on API."""
+        if not app_state.workspace_id:
+            return
+
         await delete_task(app_state.workspace_id, task_id)
         await self._load_data()
 
     async def _delete_list(self, list_id: str) -> None:
-        """Delete a task list."""
+        """Delete list on API."""
+        if not app_state.workspace_id:
+            return
+
         await delete_task_list(app_state.workspace_id, list_id)
+
         if self.selected_list_id == list_id:
             self.selected_list_id = None
+
         await self._load_data()
