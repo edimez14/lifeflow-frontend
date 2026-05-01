@@ -5,9 +5,24 @@ import flet as ft
 from screens.calendar_screen import CalendarScreen
 from screens.timer_widget import TimerWidget
 from screens.workspace_selector import WorkspaceSelectorScreen
+from state import ws_client
 from state.app_state import app_state
 
 _timer_widget: TimerWidget | None = None
+
+
+def _wire_timer_refs(timer: TimerWidget, page: ft.Page) -> None:
+    """Pass direct control references to the WS client for lean tick updates."""
+
+    ws_client.set_timer_refs(
+        label=timer._display._label,
+        state_text=timer._display._state_text,
+        pause_btn=timer._pause_btn,
+        resume_btn=timer._resume_btn,
+        cancel_btn=timer._cancel_btn,
+        start_btn=timer._start_without_task_btn,
+        page=page,
+    )
 
 
 def render_app(page: ft.Page) -> None:
@@ -18,7 +33,7 @@ def render_app(page: ft.Page) -> None:
     if app_state.workspace_id:
         # Workspace is active, show calendar as main view with timer panel
         calendar_screen = CalendarScreen(page)
-        timer_panel = _get_timer_widget()
+        timer_panel = _get_timer_widget(page)
 
         main_content = ft.Row(
             controls=[
@@ -50,12 +65,13 @@ def render_app(page: ft.Page) -> None:
     page.update()
 
 
-def _get_timer_widget() -> TimerWidget:
+def _get_timer_widget(page: ft.Page) -> TimerWidget:
     """Return the singleton timer widget instance."""
 
     global _timer_widget
     if _timer_widget is None:
         _timer_widget = TimerWidget()
+        _wire_timer_refs(_timer_widget, page)
     return _timer_widget
 
 
@@ -67,6 +83,8 @@ def main_view(page: ft.Page) -> None:
     page.horizontal_alignment = ft.CrossAxisAlignment.CENTER
     page.vertical_alignment = ft.MainAxisAlignment.CENTER
     app_state.bind_page(page)
+    # Start WebSocket client globally so tick/finished handlers are active.
+    ws_client.start()
     app_state.set_screen("workspace_selector")
     render_app(page)
 

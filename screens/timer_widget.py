@@ -2,15 +2,12 @@
 
 from __future__ import annotations
 
-import asyncio
-from typing import Any
-
 import flet as ft
 
 from api.timer_api import cancel_timer, pause_timer, resume_timer, start_timer
 from components.timer_display import TimerDisplay
+from state import ws_client
 from state.app_state import app_state
-from state.ws_client import register_handler, unregister_handler
 
 
 class TimerWidget(ft.Container):
@@ -90,27 +87,9 @@ class TimerWidget(ft.Container):
             ),
         )
 
-        self._register_ws_handlers()
-
-    def _register_ws_handlers(self) -> None:
-        """Register WebSocket event handlers for timer updates."""
-
-        register_handler("timer.tick", self._on_tick)
-        register_handler("timer.finished", self._on_finished)
-        register_handler("timer.started", self._on_started)
-        register_handler("timer.paused", self._on_paused)
-        register_handler("timer.resumed", self._on_resumed)
-        register_handler("timer.cancelled", self._on_cancelled)
-
-    def dispose(self) -> None:
-        """Unregister WS handlers when the widget is discarded."""
-
-        unregister_handler("timer.tick")
-        unregister_handler("timer.finished")
-        unregister_handler("timer.started")
-        unregister_handler("timer.paused")
-        unregister_handler("timer.resumed")
-        unregister_handler("timer.cancelled")
+        # Tick and finished are handled by ws_client directly.
+        # The WS client updates the label text in-place every second
+        # without touching this widget. On finished it shows a snackbar.
 
     def set_task_info(self, task_name: str, task_id: str | None = None) -> None:
         """Set the active task name shown in the widget."""
@@ -143,6 +122,7 @@ class TimerWidget(ft.Container):
                 estimated_seconds=0,
             )
             self._timer_id = result["id"]
+            ws_client.set_active_timer_id(self._timer_id)
             self._status = "running"
             self._task_id = None
             self._task_name = "General"
@@ -158,6 +138,8 @@ class TimerWidget(ft.Container):
 
         try:
             await pause_timer(self._timer_id, app_state.workspace_id)
+            self._status = "paused"
+            self._update_ui_state()
         except Exception:
             pass
 
@@ -169,6 +151,8 @@ class TimerWidget(ft.Container):
 
         try:
             await resume_timer(self._timer_id, app_state.workspace_id)
+            self._status = "running"
+            self._update_ui_state()
         except Exception:
             pass
 
@@ -180,78 +164,19 @@ class TimerWidget(ft.Container):
 
         try:
             await cancel_timer(self._timer_id, app_state.workspace_id)
-        except Exception:
-            pass
-
-    # ── WS handlers ──────────────────────────────────────
-
-    async def _on_tick(self, data: Any) -> None:
-        """Update the display on each tick."""
-
-        if isinstance(data, list):
-            for tick in data:
-                timer_id = tick.get("timer_id")
-                if timer_id == self._timer_id:
-                    remaining = tick.get("remaining_seconds", 0)
-                    is_paused = self._status == "paused"
-                    self._display.update_display(remaining, is_paused)
-                    break
-        elif isinstance(data, dict):
-            timer_id = data.get("timer_id")
-            if timer_id == self._timer_id:
-                remaining = data.get("remaining_seconds", 0)
-                is_paused = self._status == "paused"
-                self._display.update_display(remaining, is_paused)
-
-    async def _on_finished(self, data: Any) -> None:
-        """Handle timer finished event."""
-
-        timer_id = data.get("timer_id") if isinstance(data, dict) else None
-        if timer_id and timer_id == self._timer_id:
-            self._status = "completed"
-            self._display.show_completed()
-            self._update_ui_state()
-
-    async def _on_started(self, data: Any) -> None:
-        """Handle timer started event."""
-
-        if isinstance(data, dict):
-            self._timer_id = data.get("id")
-            self._task_id = data.get("task_id")
-            self._status = "running"
-            self._display.update_display(data.get("estimated_seconds", 0))
-            self._update_task_display()
-            self._update_ui_state()
-
-    async def _on_paused(self, data: Any) -> None:
-        """Handle timer paused event."""
-
-        if isinstance(data, dict) and data.get("id") == self._timer_id:
-            self._status = "paused"
-            self._display.update_display(0, is_paused=True)
-            self._update_ui_state()
-
-    async def _on_resumed(self, data: Any) -> None:
-        """Handle timer resumed event."""
-
-        if isinstance(data, dict) and data.get("id") == self._timer_id:
-            self._status = "running"
-            self._display.update_display(0)
-            self._update_ui_state()
-
-    async def _on_cancelled(self, data: Any) -> None:
-        """Handle timer cancelled event."""
-
-        if isinstance(data, dict) and data.get("id") == self._timer_id:
-            self._status = "idle"
+            ws_client.set_active_timer_id(None)
             self._timer_id = None
+            self._status = "idle"
             self._display.show_idle()
             self._update_ui_state()
+        except Exception:
+            pass
 
     def reset(self) -> None:
         """Reset the widget to idle state."""
 
         self._timer_id = None
+        ws_client.set_active_timer_id(None)
         self._task_id = None
         self._status = "idle"
         self._task_name = ""
