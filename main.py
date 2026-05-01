@@ -3,8 +3,11 @@ from __future__ import annotations
 import flet as ft
 
 from screens.calendar_screen import CalendarScreen
+from screens.timer_widget import TimerWidget
 from screens.workspace_selector import WorkspaceSelectorScreen
 from state.app_state import app_state
+
+_timer_widget: TimerWidget | None = None
 
 
 def render_app(page: ft.Page) -> None:
@@ -13,21 +16,47 @@ def render_app(page: ft.Page) -> None:
     page.controls.clear()
 
     if app_state.workspace_id:
-        # Workspace is active, show calendar as main view
+        # Workspace is active, show calendar as main view with timer panel
         calendar_screen = CalendarScreen(page)
-        page.add(calendar_screen.view)
-        page.run_task(calendar_screen._load_data)  # initial load
+        timer_panel = _get_timer_widget()
+
+        main_content = ft.Row(
+            controls=[
+                ft.Column(
+                    controls=[calendar_screen.view],
+                    expand=True,
+                ),
+                ft.VerticalDivider(width=1),
+                ft.Column(
+                    controls=[timer_panel],
+                    width=240,
+                    alignment=ft.MainAxisAlignment.START,
+                ),
+            ],
+            expand=True,
+            spacing=0,
+        )
+        page.add(main_content)
+        page.run_task(calendar_screen._load_data)
     elif app_state.current_screen == "workspace_selector":
         selector_screen = WorkspaceSelectorScreen(
             page, on_authenticated=lambda: render_app(page))
         page.add(selector_screen.build())
         page.run_task(selector_screen.load_workspaces)
     else:
-        # Fallback: show workspace selector
         app_state.set_screen("workspace_selector")
         render_app(page)
 
     page.update()
+
+
+def _get_timer_widget() -> TimerWidget:
+    """Return the singleton timer widget instance."""
+
+    global _timer_widget
+    if _timer_widget is None:
+        _timer_widget = TimerWidget()
+    return _timer_widget
 
 
 def main_view(page: ft.Page) -> None:
