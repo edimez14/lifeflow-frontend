@@ -546,7 +546,7 @@ class CalendarScreen:
                       horizontal_alignment=ft.CrossAxisAlignment.START),
             padding=4,
             bgcolor=bg_color,
-            border=ft.border.all(1, ft.Colors.GREY_300),
+            border=ft.Border.all(1, ft.Colors.GREY_300),
             border_radius=4,
             width=90,
             height=90,

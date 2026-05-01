@@ -28,25 +28,25 @@ class TimerWidget(ft.Container):
             text_align=ft.TextAlign.CENTER,
             overflow=ft.TextOverflow.ELLIPSIS,
         )
-        self._pause_btn = ft.ElevatedButton(
+        self._pause_btn = ft.Button(
             "Pause",
             icon=ft.Icons.PAUSE_CIRCLE_FILLED,
             visible=False,
             on_click=self._on_pause,
         )
-        self._resume_btn = ft.ElevatedButton(
+        self._resume_btn = ft.Button(
             "Resume",
             icon=ft.Icons.PLAY_CIRCLE_FILLED,
             visible=False,
             on_click=self._on_resume,
         )
-        self._cancel_btn = ft.ElevatedButton(
+        self._cancel_btn = ft.Button(
             "Cancel",
             icon=ft.Icons.STOP_CIRCLE,
             visible=False,
             on_click=self._on_cancel,
         )
-        self._start_without_task_btn = ft.ElevatedButton(
+        self._start_without_task_btn = ft.Button(
             "Start timer",
             icon=ft.Icons.TIMER,
             visible=True,

@@ -46,7 +46,7 @@ class TimerDisplay(ft.Container):
         super().__init__(
             bgcolor=ft.Colors.GREY_900,
             border_radius=12,
-            padding=ft.padding.symmetric(horizontal=16, vertical=12),
+            padding=ft.Padding.symmetric(horizontal=16, vertical=12),
             animate_opacity=300,
             content=ft.Column(
                 controls=[self._label, self._state_text],
