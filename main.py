@@ -2,13 +2,17 @@ from __future__ import annotations
 
 import flet as ft
 
+from components.sidebar import Sidebar
 from screens.calendar_screen import CalendarScreen
+from screens.tasks_screen import TasksScreen
 from screens.timer_widget import TimerWidget
 from screens.workspace_selector import WorkspaceSelectorScreen
 from state import ws_client
 from state.app_state import app_state
 
 _timer_widget: TimerWidget | None = None
+_active_screen_name: str | None = None
+_active_screen_obj: object | None = None
 
 
 def _wire_timer_refs(timer: TimerWidget, page: ft.Page) -> None:
@@ -31,16 +35,19 @@ def render_app(page: ft.Page) -> None:
     page.controls.clear()
 
     if app_state.workspace_id:
-        # Workspace is active, show calendar as main view with timer panel
-        calendar_screen = CalendarScreen(page)
+        main_screen = _get_main_screen(page)
         timer_panel = _get_timer_widget(page)
+
+        sidebar = Sidebar(
+            on_navigate=_on_navigate,
+            on_back=_on_back,
+        )
 
         main_content = ft.Row(
             controls=[
-                ft.Column(
-                    controls=[calendar_screen.view],
-                    expand=True,
-                ),
+                sidebar,
+                ft.VerticalDivider(width=1),
+                ft.Container(content=main_screen, expand=True),
                 ft.VerticalDivider(width=1),
                 ft.Column(
                     controls=[timer_panel],
@@ -52,7 +59,6 @@ def render_app(page: ft.Page) -> None:
             spacing=0,
         )
         page.add(main_content)
-        page.run_task(calendar_screen._load_data)
     elif app_state.current_screen == "workspace_selector":
         selector_screen = WorkspaceSelectorScreen(
             page, on_authenticated=lambda: render_app(page))
@@ -73,6 +79,47 @@ def _get_timer_widget(page: ft.Page) -> TimerWidget:
         _timer_widget = TimerWidget()
         _wire_timer_refs(_timer_widget, page)
     return _timer_widget
+
+
+def _get_main_screen(page: ft.Page) -> ft.Control:
+    """Return the active screen based on the current navigation state."""
+
+    global _active_screen_name, _active_screen_obj
+
+    screen_name = app_state.current_screen
+    if screen_name in ("workspace_home", "calendar"):
+        screen_name = "calendar"
+    elif screen_name not in ("calendar", "tasks"):
+        screen_name = "calendar"
+
+    if _active_screen_name != screen_name:
+        if _active_screen_obj is not None and hasattr(_active_screen_obj, "dispose"):
+            _active_screen_obj.dispose()
+
+        if screen_name == "tasks":
+            _active_screen_obj = TasksScreen(page)
+        else:
+            _active_screen_obj = CalendarScreen(page)
+            page.run_task(_active_screen_obj._load_data)
+
+        _active_screen_name = screen_name
+
+    return _active_screen_obj.view
+
+
+def _on_navigate(screen_name: str) -> None:
+    """Handle navigation from the sidebar."""
+    app_state.set_screen(screen_name)
+    if app_state.page is not None:
+        render_app(app_state.page)
+
+
+def _on_back() -> None:
+    """Return to workspace selector."""
+    app_state.clear_workspace()
+    app_state.set_screen("workspace_selector")
+    if app_state.page is not None:
+        render_app(app_state.page)
 
 
 def main_view(page: ft.Page) -> None:

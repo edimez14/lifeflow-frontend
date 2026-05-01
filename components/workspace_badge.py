@@ -19,7 +19,7 @@ class WorkspaceBadge(ft.Container):
 
         super().__init__(
             bgcolor=ft.Colors.GREY_100,
-            border=ft.border.all(1, ft.Colors.GREY_300),
+            border=ft.Border.all(1, ft.Colors.GREY_300),
             border_radius=12,
             padding=10,
             ink=True,
