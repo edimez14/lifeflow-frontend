@@ -80,7 +80,7 @@ class TaskRow(ft.Container):
                 ft.Checkbox(value=is_completed, on_change=self._handle_toggle),
                 ft.TextButton(
                     text=str(task.get("title", "Untitled task")),
-                    style=ft.ButtonStyle(padding=ft.padding.all(0)),
+                    style=ft.ButtonStyle(padding=ft.Padding.all(0)),
                     on_click=self._handle_expand,
                 ),
                 ft.Container(
@@ -93,7 +93,7 @@ class TaskRow(ft.Container):
                     content=ft.Text(priority, size=10, color=ft.Colors.WHITE),
                     bgcolor=priority_color,
                     border_radius=4,
-                    padding=ft.padding.symmetric(horizontal=6, vertical=2),
+                    padding=ft.Padding.symmetric(horizontal=6, vertical=2),
                 ),
                 ft.Container(
                     content=ft.Text(due_date if due_date else "-", size=11),
@@ -139,7 +139,7 @@ class TaskRow(ft.Container):
 
                 subtasks_column.controls.append(
                     ft.Container(
-                        padding=ft.padding.only(left=44, right=4),
+                        padding=ft.Padding(left=44, right=4),
                         content=ft.Row(
                             [
                                 ft.Checkbox(
@@ -170,7 +170,7 @@ class TaskRow(ft.Container):
 
             subtasks_column.controls.append(
                 ft.Container(
-                    padding=ft.padding.only(left=44, right=4, top=2, bottom=2),
+                    padding=ft.Padding(left=44, right=4, top=2, bottom=2),
                     content=ft.Row(
                         [
                             self._subtask_input,
@@ -190,10 +190,10 @@ class TaskRow(ft.Container):
 
         super().__init__(
             content=ft.Column(content_controls, spacing=4),
-            border=ft.border.all(1, ft.Colors.GREY_300),
+            border=ft.Border.all(1, ft.Colors.GREY_300),
             border_radius=6,
             padding=8,
-            margin=ft.margin.only(bottom=6),
+            margin=ft.Margin(top=0, left=0, right=0, bottom=6),
             bgcolor=ft.Colors.WHITE,
         )
 

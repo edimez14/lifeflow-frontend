@@ -17,6 +17,8 @@ class AppState:
     workspace_id: str | None = None
     workspace_token: str | None = None
     user_data: dict[str, Any] = field(default_factory=dict)
+    show_sidebar: bool = True
+    show_timer: bool = True
 
     def bind_page(self, page: Page) -> None:
         """Bind the Flet page used by the app."""
@@ -48,6 +50,18 @@ class AppState:
         """Clear the active workspace information."""
 
         self.set_workspace(None, None)
+
+    def toggle_sidebar(self) -> None:
+        """Toggle sidebar visibility."""
+
+        self.show_sidebar = not self.show_sidebar
+        self.refresh()
+
+    def toggle_timer(self) -> None:
+        """Toggle timer panel visibility."""
+
+        self.show_timer = not self.show_timer
+        self.refresh()
 
     def refresh(self) -> None:
         """Refresh the current page if it is available."""

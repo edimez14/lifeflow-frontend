@@ -43,20 +43,54 @@ def render_app(page: ft.Page) -> None:
             on_back=_on_back,
         )
 
-        main_content = ft.Row(
+        header = ft.Row(
             controls=[
+                ft.IconButton(
+                    icon=ft.Icons.MENU,
+                    tooltip="Toggle sidebar",
+                    on_click=_on_toggle_sidebar,
+                ),
+                ft.IconButton(
+                    icon=ft.Icons.TIMER,
+                    tooltip="Toggle timer",
+                    on_click=_on_toggle_timer,
+                ),
+            ],
+            spacing=8,
+        )
+
+        content_row_controls: list[ft.Control] = []
+        if app_state.show_sidebar:
+            content_row_controls.extend([
                 sidebar,
                 ft.VerticalDivider(width=1),
-                ft.Container(content=main_screen, expand=True),
+            ])
+
+        content_row_controls.append(
+            ft.Container(content=main_screen, expand=True)
+        )
+
+        if app_state.show_timer:
+            content_row_controls.extend([
                 ft.VerticalDivider(width=1),
                 ft.Column(
                     controls=[timer_panel],
                     width=240,
                     alignment=ft.MainAxisAlignment.START,
                 ),
+            ])
+
+        main_content = ft.Column(
+            controls=[
+                header,
+                ft.Row(
+                    controls=content_row_controls,
+                    expand=True,
+                    spacing=0,
+                ),
             ],
             expand=True,
-            spacing=0,
+            spacing=8,
         )
         page.add(main_content)
     elif app_state.current_screen == "workspace_selector":
@@ -118,6 +152,22 @@ def _on_back() -> None:
     """Return to workspace selector."""
     app_state.clear_workspace()
     app_state.set_screen("workspace_selector")
+    if app_state.page is not None:
+        render_app(app_state.page)
+
+
+def _on_toggle_sidebar(_: ft.ControlEvent) -> None:
+    """Toggle the sidebar visibility."""
+
+    app_state.toggle_sidebar()
+    if app_state.page is not None:
+        render_app(app_state.page)
+
+
+def _on_toggle_timer(_: ft.ControlEvent) -> None:
+    """Toggle the timer panel visibility."""
+
+    app_state.toggle_timer()
     if app_state.page is not None:
         render_app(app_state.page)
 

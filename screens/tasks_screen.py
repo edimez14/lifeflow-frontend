@@ -291,7 +291,7 @@ class TasksScreen:
                         weight=ft.FontWeight.BOLD,
                         size=13,
                     ),
-                    padding=ft.padding.only(top=8, bottom=4),
+                    padding=ft.Padding(top=8, bottom=4),
                 )
             )
 
@@ -309,7 +309,7 @@ class TasksScreen:
                     ft.Container(
                         content=ft.Text("No date / Sin fecha",
                                         weight=ft.FontWeight.BOLD, size=13),
-                        padding=ft.padding.only(top=10, bottom=4),
+                        padding=ft.Padding(top=10, bottom=4),
                     )
                 )
                 await self._render_task_rows(no_date_items)

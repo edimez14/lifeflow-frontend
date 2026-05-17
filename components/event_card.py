@@ -5,6 +5,30 @@ from datetime import datetime
 import flet as ft
 
 
+# Colores por categoria de evento
+CATEGORY_COLORS = {
+    "importante": "#FF9800",
+    "urgente": "#F44336",
+    "especial": "#9C27B0",
+    "repetitivo": "#2196F3",
+    "solo_una_vez": "#4CAF50",
+}
+
+
+def get_category_label(cat: str | None) -> str:
+    """Convierte el valor de categoria a un nombre legible."""
+    if not cat:
+        return ""
+    labels = {
+        "importante": "Importante",
+        "urgente": "Urgente",
+        "especial": "Especial",
+        "repetitivo": "Repetitivo",
+        "solo_una_vez": "Solo una vez",
+    }
+    return labels.get(cat, cat)
+
+
 class EventCard(ft.Container):
     """Card that shows event details with edit and delete buttons."""
 
@@ -30,16 +54,28 @@ class EventCard(ft.Container):
         # Build the card content
         self._title_text = ft.Text(title, weight=ft.FontWeight.BOLD, size=14)
         self._time_text = ft.Text(time_str, size=12)
-        self._category_text = ft.Text(
-            event.get("category") or "", size=10, italic=True)
+        # Categoria con su color
+        cat = event.get("category")
+        cat_color = CATEGORY_COLORS.get(cat, color)
+        cat_label = get_category_label(cat)
+
+        if cat_label:
+            self._category_text = ft.Container(
+                content=ft.Text(cat_label, size=9, color=ft.Colors.WHITE),
+                bgcolor=cat_color,
+                padding=ft.Padding(left=4, right=4, top=1, bottom=1),
+                border_radius=4,
+            )
+        else:
+            self._category_text = ft.Container(height=0)
 
         info_column = ft.Column(
             [self._title_text, self._time_text, self._category_text], spacing=2, tight=True)
 
         edit_btn = ft.IconButton(
-            icon=ft.icons.EDIT, icon_size=16, on_click=lambda e: self._on_edit_click())
+            icon=ft.Icons.EDIT, icon_size=16, on_click=lambda e: self._on_edit_click())
         delete_btn = ft.IconButton(
-            icon=ft.icons.DELETE, icon_size=16, on_click=lambda e: self._on_delete_click())
+            icon=ft.Icons.DELETE, icon_size=16, on_click=lambda e: self._on_delete_click())
         actions = ft.Row([edit_btn, delete_btn], spacing=0,
                          alignment=ft.MainAxisAlignment.END)
 
@@ -50,7 +86,7 @@ class EventCard(ft.Container):
             [
                 left_bar,
                 ft.Container(info_column, expand=True,
-                             padding=ft.padding.only(left=8, right=4)),
+                             padding=ft.Padding(left=8, right=4)),
                 actions,
             ],
             spacing=0,
@@ -60,10 +96,10 @@ class EventCard(ft.Container):
         super().__init__(
             content=card_content,
             padding=0,
-            border=ft.border.all(1, ft.colors.GREY_300),
+            border=ft.Border.all(1, ft.Colors.GREY_300),
             border_radius=5,
-            bgcolor=ft.colors.GREY_50,
-            margin=ft.margin.only(bottom=6),
+            bgcolor=ft.Colors.GREY_50,
+            margin=ft.Margin(top=0, left=0, right=0, bottom=6),
         )
 
     def _on_edit_click(self) -> None:

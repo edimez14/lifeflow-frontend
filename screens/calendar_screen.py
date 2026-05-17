@@ -89,7 +89,7 @@ class CalendarScreen:
             "Semana", on_click=lambda e: self._switch_view("week"))
         day_btn = ft.Button("Dia", on_click=lambda e: self._switch_view("day"))
         year_btn = ft.Button(
-            "Ano", on_click=lambda e: self._switch_view("year"))
+            "Año", on_click=lambda e: self._switch_view("year"))
         view_selector = ft.Row(
             [month_btn, week_btn, day_btn, year_btn],
             alignment=ft.MainAxisAlignment.CENTER,
@@ -573,7 +573,7 @@ class CalendarScreen:
                 bgcolor=display_color,
                 padding=2,
                 border_radius=3,
-                margin=ft.margin.only(top=1),
+                margin=ft.margin.Margin(top=1, left=0, right=0, bottom=0),
             )
             event_labels.append(label)
 
