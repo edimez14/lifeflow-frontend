@@ -902,28 +902,21 @@ class CalendarScreen:
         """Open a centered dialog to view, create, edit and delete monthly goals."""
         goals = await list_all_monthly_goals(app_state.workspace_id)
 
-        # Pre-fill form fields for current month
-        current_goal = next(
-            (g for g in goals if g["year"] == self.current_year
-             and g["month"] == self.current_month),
-            None,
-        )
+        # Form fields for current month (always empty for new input)
         self._goal_text_field = ft.TextField(
             label="Objetivo del mes actual",
-            value=(current_goal or {}).get("goal_text", ""),
             multiline=True,
             min_lines=2,
             max_lines=4,
         )
         self._action_plan_field = ft.TextField(
             label="Plan de accion",
-            value=(current_goal or {}).get("action_plan", ""),
             multiline=True,
             min_lines=2,
             max_lines=4,
         )
 
-        save_btn = ft.ElevatedButton(
+        save_btn = ft.Button(
             "Guardar",
             on_click=lambda e: self.page.run_task(
                 self._save_goal_from_dialog),
@@ -981,13 +974,13 @@ class CalendarScreen:
                 )
             )
 
-        dlg = ft.AlertDialog(
+        self._goals_dlg = ft.AlertDialog(
             title=ft.Text("Objetivos del mes",
                           weight=ft.FontWeight.BOLD, size=18),
             content=ft.Container(
                 content=ft.Column(
                     [
-                        ft.Text("Mes actual",
+                        ft.Text("Nuevo objetivo",
                                 weight=ft.FontWeight.BOLD, size=14),
                         self._goal_text_field,
                         self._action_plan_field,
@@ -1012,9 +1005,9 @@ class CalendarScreen:
             ],
             modal=True,
         )
-        dlg.open = True
+        self._goals_dlg.open = True
         self.page.overlay.clear()
-        self.page.overlay.append(dlg)
+        self.page.overlay.append(self._goals_dlg)
         self.page.update()
 
     async def _save_goal_from_dialog(self) -> None:
@@ -1053,7 +1046,8 @@ class CalendarScreen:
         )
 
         async def _save_edit(_: ft.ControlEvent) -> None:
-            self.page.close(edit_dlg)
+            edit_dlg.open = False
+            self.page.update()
             data = {
                 "goal_text": goal_text_f.value or "",
                 "action_plan": action_f.value or "",
@@ -1073,9 +1067,10 @@ class CalendarScreen:
             ),
             actions=[
                 ft.TextButton("Cancelar",
-                              on_click=lambda e: self.page.close(edit_dlg)),
-                ft.ElevatedButton("Guardar", on_click=_save_edit),
+                              on_click=lambda e: self._close_subdialog(edit_dlg)),
+                ft.Button("Guardar", on_click=_save_edit),
             ],
+            actions_alignment=ft.MainAxisAlignment.END,
             modal=True,
         )
         edit_dlg.open = True
@@ -1085,7 +1080,8 @@ class CalendarScreen:
     async def _delete_existing_goal(self, goal: dict) -> None:
         """Confirm and delete a goal."""
         async def _confirm(_: ft.ControlEvent) -> None:
-            self.page.close(confirm_dlg)
+            confirm_dlg.open = False
+            self.page.update()
             await delete_goal_api(
                 app_state.workspace_id, goal["year"], goal["month"]
             )
@@ -1101,14 +1097,20 @@ class CalendarScreen:
             actions=[
                 ft.TextButton(
                     "Cancelar",
-                    on_click=lambda e: self.page.close(confirm_dlg),
+                    on_click=lambda e: self._close_subdialog(confirm_dlg),
                 ),
-                ft.ElevatedButton("Eliminar", on_click=_confirm),
+                ft.Button("Eliminar", on_click=_confirm),
             ],
+            actions_alignment=ft.MainAxisAlignment.END,
             modal=True,
         )
         confirm_dlg.open = True
         self.page.overlay.append(confirm_dlg)
+        self.page.update()
+
+    def _close_subdialog(self, dlg: ft.AlertDialog) -> None:
+        """Close a sub-dialog (edit or confirm) by setting open=False."""
+        dlg.open = False
         self.page.update()
 
     def _close_goals_dialog(self, e: ft.ControlEvent | None) -> None:
