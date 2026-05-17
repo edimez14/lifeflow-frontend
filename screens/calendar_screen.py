@@ -898,12 +898,7 @@ class CalendarScreen:
             goals = await list_all_monthly_goals(app_state.workspace_id)
         except Exception as e:
             print(f"Error loading monthly goals: {e}")
-            self.page.snack_bar = ft.SnackBar(
-                ft.Text(f"Error al cargar objetivos: {e}"),
-                open=True,
-            )
-            self.page.update()
-            return
+            goals = []
 
         # Form fields for current month (always empty for new input)
         self._goal_text_field = ft.TextField(
@@ -1009,9 +1004,9 @@ class CalendarScreen:
             modal=True,
         )
         self._goals_dlg = dlg
-        # Open via page.dialog (already verified this works for showing the dialog)
-        self.page.dialog = dlg
+        # overlay.append is the ONLY pattern that successfully opens this dialog
         dlg.open = True
+        self.page.overlay.append(dlg)
         self.page.update()
 
     async def _save_goal_from_dialog(self) -> None:
