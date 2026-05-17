@@ -1004,6 +1004,8 @@ class CalendarScreen:
             modal=True,
         )
         self._goals_dlg = dlg
+        # Remove stale closed AlertDialogs from overlay
+        self._clean_stale_dialogs()
         dlg.open = True
         self.page.overlay.append(dlg)
         self.page.update()
@@ -1036,6 +1038,7 @@ class CalendarScreen:
         if self._goals_dlg:
             self._goals_dlg.open = False
             self.page.update()
+        self._clean_stale_dialogs()
 
         goal_text_f = ft.TextField(
             label="Objetivo",
@@ -1094,6 +1097,7 @@ class CalendarScreen:
         if self._goals_dlg:
             self._goals_dlg.open = False
             self.page.update()
+        self._clean_stale_dialogs()
 
         async def _confirm(_: ft.ControlEvent) -> None:
             self.page.close(confirm_dlg)
@@ -1125,6 +1129,13 @@ class CalendarScreen:
             modal=True,
         )
         self.page.open(confirm_dlg)
+
+    def _clean_stale_dialogs(self) -> None:
+        """Remove any closed AlertDialogs from overlay to avoid interference."""
+        for i in range(len(self.page.overlay) - 1, -1, -1):
+            c = self.page.overlay[i]
+            if isinstance(c, ft.AlertDialog) and not c.open:
+                self.page.overlay.pop(i)
 
     def _close_subdialog(self, dlg: ft.AlertDialog) -> None:
         """Close a sub-dialog (edit or confirm) by setting open=False."""
