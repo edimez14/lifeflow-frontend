@@ -438,16 +438,120 @@ class TasksScreen:
         self.page.run_task(_start)
 
     def _handle_edit(self, task: dict) -> None:
-        """Handle edit action from row component."""
-        self.page.snack_bar = ft.SnackBar(ft.Text("Edit task action"))
-        self.page.snack_bar.open = True
-        self.page.update()
+        """Open a dialog to edit task fields."""
+        if not app_state.workspace_id:
+            return
+
+        task_id = str(task.get("id", ""))
+        title_f = ft.TextField(
+            label="Title", value=str(task.get("title", "")))
+        desc_f = ft.TextField(
+            label="Description", value=str(task.get("description") or ""),
+            multiline=True, min_lines=2, max_lines=4)
+        priority_f = ft.Dropdown(
+            label="Priority",
+            value=str(task.get("priority", "normal")),
+            options=[
+                ft.dropdown.Option("urgent", "Urgent"),
+                ft.dropdown.Option("important", "Important"),
+                ft.dropdown.Option("normal", "Normal"),
+                ft.dropdown.Option("low", "Low"),
+            ],
+        )
+        status_f = ft.Dropdown(
+            label="Status",
+            value=str(task.get("status", "pending")),
+            options=[
+                ft.dropdown.Option("pending", "Pending"),
+                ft.dropdown.Option("in_progress", "In Progress"),
+                ft.dropdown.Option("completed", "Completed"),
+            ],
+        )
+
+        async def _save(_: ft.ControlEvent) -> None:
+            self.page.close(dialog)
+            try:
+                await update_task(
+                    workspace_id=app_state.workspace_id,
+                    task_id=task_id,
+                    title=title_f.value or None,
+                    description=desc_f.value or None,
+                    priority=priority_f.value,
+                    status=status_f.value,
+                )
+                await self._load_data()
+            except Exception as ex:
+                self.page.snack_bar = ft.SnackBar(
+                    ft.Text(f"Error updating task: {ex}"))
+                self.page.snack_bar.open = True
+                self.page.update()
+
+        def _cancel(_: ft.ControlEvent) -> None:
+            self.page.close(dialog)
+
+        dialog = ft.AlertDialog(
+            title=ft.Text("Edit Task"),
+            content=ft.Column(
+                controls=[title_f, desc_f, priority_f, status_f],
+                width=400, height=340, scroll=ft.ScrollMode.ADAPTIVE),
+            actions=[
+                ft.TextButton("Cancel", on_click=_cancel),
+                ft.ElevatedButton("Save", on_click=_save),
+            ],
+        )
+        self.page.open(dialog)
 
     def _handle_move(self, task: dict) -> None:
-        """Handle move action from row component."""
-        self.page.snack_bar = ft.SnackBar(ft.Text("Move task action"))
-        self.page.snack_bar.open = True
-        self.page.update()
+        """Open a dialog to move task to another list."""
+        if not app_state.workspace_id:
+            return
+
+        task_id = str(task.get("id", ""))
+        current_list_id = str(task.get("task_list_id", ""))
+
+        target_f = ft.Dropdown(
+            label="Move to list",
+            options=[
+                ft.dropdown.Option(lst["id"], lst.get("name", "List"))
+                for lst in self.task_lists
+            ],
+        )
+        # Pre-select current list if matches
+        if current_list_id:
+            target_f.value = current_list_id
+
+        async def _move(_: ft.ControlEvent) -> None:
+            self.page.close(dialog)
+            new_list = target_f.value
+            if not new_list or new_list == current_list_id:
+                return
+            try:
+                await update_task(
+                    workspace_id=app_state.workspace_id,
+                    task_id=task_id,
+                    task_list_id=new_list,
+                )
+                await self._load_data()
+            except Exception as ex:
+                self.page.snack_bar = ft.SnackBar(
+                    ft.Text(f"Error moving task: {ex}"))
+                self.page.snack_bar.open = True
+                self.page.update()
+
+        def _cancel(_: ft.ControlEvent) -> None:
+            self.page.close(dialog)
+
+        dialog = ft.AlertDialog(
+            title=ft.Text("Move Task"),
+            content=ft.Column(
+                controls=[target_f],
+                width=300, height=90),
+            actions=[
+                ft.TextButton("Cancel", on_click=_cancel),
+                ft.ElevatedButton("Move", on_click=_move),
+            ],
+        )
+        self.page.open(dialog)
 
     def _handle_delete(self, task_id: str) -> None:
         """Handle delete action from row component."""

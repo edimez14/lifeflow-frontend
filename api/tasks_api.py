@@ -97,6 +97,7 @@ async def update_task(
     priority: str | None = None,
     due_date: str | None = None,
     status: str | None = None,
+    task_list_id: str | None = None,
 ) -> dict:
     """Update a task."""
     payload = {}
@@ -110,6 +111,8 @@ async def update_task(
         payload["due_date"] = due_date
     if status is not None:
         payload["status"] = status
+    if task_list_id is not None:
+        payload["task_list_id"] = task_list_id
 
     response = await http_client.put(f"/workspaces/{workspace_id}/tasks/{task_id}", json=payload)
     response.raise_for_status()
