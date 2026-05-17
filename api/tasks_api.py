@@ -122,10 +122,13 @@ async def delete_task(workspace_id: str, task_id: str) -> None:
     response.raise_for_status()
 
 
-async def reorder_tasks(workspace_id: str, reorders: list[dict]) -> None:
-    """Reorder multiple tasks."""
-    payload = {"reorders": reorders}
-    response = await http_client.post(f"/workspaces/{workspace_id}/tasks/reorder", json=payload)
+async def reorder_tasks(workspace_id: str, task_list_id: str, items: list[dict]) -> None:
+    """Reorder multiple tasks inside a task list."""
+    payload = {"items": items}
+    response = await http_client.patch(
+        f"/workspaces/{workspace_id}/task-lists/{task_list_id}/tasks/reorder",
+        json=payload,
+    )
     response.raise_for_status()
 
 

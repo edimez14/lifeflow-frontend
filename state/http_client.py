@@ -94,3 +94,9 @@ async def delete(url: str, **kwargs: Any) -> httpx.Response:
     """Send a DELETE request."""
 
     return await request("DELETE", url, **kwargs)
+
+
+async def patch(url: str, **kwargs: Any) -> httpx.Response:
+    """Send a PATCH request."""
+
+    return await request("PATCH", url, **kwargs)
