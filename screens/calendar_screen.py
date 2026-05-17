@@ -14,7 +14,12 @@ from api.calendar_api import (
     create_calendar,
     fetch_event_categories,
 )
-from api.monthly_goals_api import fetch_monthly_goal, save_monthly_goal
+from api.monthly_goals_api import (
+    fetch_monthly_goal,
+    save_monthly_goal,
+    list_all_monthly_goals,
+    delete_monthly_goal as delete_goal_api,
+)
 from components.event_card import EventCard
 from state.app_state import app_state
 from state.ws_client import register_handler, unregister_handler
@@ -890,23 +895,156 @@ class CalendarScreen:
         self.page.overlay.append(dlg)
         self.page.update()
 
-    def _close_modal(self) -> None:
-        pass  # ya no se usa, se cierra con self.page.close(dlg)
-
     # ------------------------------------------------------------------
     # Monthly goals
     # ------------------------------------------------------------------
     async def _open_monthly_goals(self) -> None:
-        goal = await fetch_monthly_goal(app_state.workspace_id, self.current_year, self.current_month)
+        """Open a centered dialog to view, create, edit and delete monthly goals."""
+        goals = await list_all_monthly_goals(app_state.workspace_id)
 
+        # Pre-fill form fields for current month
+        current_goal = next(
+            (g for g in goals if g["year"] == self.current_year
+             and g["month"] == self.current_month),
+            None,
+        )
         self._goal_text_field = ft.TextField(
-            label="Objetivo del mes",
-            value=goal.get("goal_text", ""),
+            label="Objetivo del mes actual",
+            value=(current_goal or {}).get("goal_text", ""),
             multiline=True,
             min_lines=2,
             max_lines=4,
         )
         self._action_plan_field = ft.TextField(
+            label="Plan de accion",
+            value=(current_goal or {}).get("action_plan", ""),
+            multiline=True,
+            min_lines=2,
+            max_lines=4,
+        )
+
+        save_btn = ft.ElevatedButton(
+            "Guardar",
+            on_click=lambda e: self.page.run_task(
+                self._save_goal_from_dialog),
+        )
+
+        # Build list of existing goals
+        goal_items: list[ft.Control] = []
+        for g in goals:
+            month_name = calendar.month_name[g["month"]]
+            edit_btn = ft.IconButton(
+                icon=ft.Icons.EDIT,
+                icon_size=18,
+                tooltip="Editar",
+                on_click=lambda e, goal=g: self.page.run_task(
+                    self._edit_existing_goal, goal
+                ),
+            )
+            delete_btn = ft.IconButton(
+                icon=ft.Icons.DELETE,
+                icon_size=18,
+                tooltip="Eliminar",
+                on_click=lambda e, goal=g: self.page.run_task(
+                    self._delete_existing_goal, goal
+                ),
+            )
+            goal_items.append(
+                ft.Container(
+                    content=ft.Column([
+                        ft.Text(
+                            f"{month_name} {g['year']}",
+                            weight=ft.FontWeight.BOLD,
+                        ),
+                        ft.Text(g.get("goal_text", "(sin objetivo)")),
+                        ft.Text(
+                            g.get("action_plan", ""),
+                            size=12,
+                            color=ft.Colors.GREY_600,
+                        ),
+                        ft.Row(
+                            [edit_btn, delete_btn],
+                            alignment=ft.MainAxisAlignment.END,
+                        ),
+                    ]),
+                    padding=ft.Padding(top=8, bottom=8, left=0, right=0),
+                )
+            )
+            goal_items.append(ft.Divider(height=1))
+
+        if not goal_items:
+            goal_items.append(
+                ft.Text(
+                    "No hay objetivos guardados",
+                    italic=True,
+                    color=ft.Colors.GREY_500,
+                )
+            )
+
+        dlg = ft.AlertDialog(
+            title=ft.Text("Objetivos del mes",
+                          weight=ft.FontWeight.BOLD, size=18),
+            content=ft.Container(
+                content=ft.Column(
+                    [
+                        ft.Text("Mes actual",
+                                weight=ft.FontWeight.BOLD, size=14),
+                        self._goal_text_field,
+                        self._action_plan_field,
+                        ft.Row(
+                            [save_btn],
+                            alignment=ft.MainAxisAlignment.END,
+                        ),
+                        ft.Divider(height=2),
+                        ft.Text("Todos los objetivos",
+                                weight=ft.FontWeight.BOLD, size=14),
+                        *goal_items,
+                    ],
+                    spacing=8,
+                    scroll=ft.ScrollMode.AUTO,
+                ),
+                width=480,
+                padding=ft.Padding(top=10, bottom=10, left=10, right=10),
+            ),
+            actions=[
+                ft.TextButton(
+                    "Cerrar", on_click=self._close_goals_dialog),
+            ],
+            modal=True,
+        )
+        dlg.open = True
+        self.page.overlay.clear()
+        self.page.overlay.append(dlg)
+        self.page.update()
+
+    async def _save_goal_from_dialog(self) -> None:
+        """Save current month's goal and refresh the dialog."""
+        try:
+            data = {
+                "goal_text": self._goal_text_field.value or "",
+                "action_plan": self._action_plan_field.value or "",
+            }
+            await save_monthly_goal(
+                app_state.workspace_id,
+                self.current_year,
+                self.current_month,
+                data,
+            )
+            self._close_goals_dialog(None)
+            await self._open_monthly_goals()
+        except Exception as e:
+            print(f"Error al guardar objetivo: {e}")
+
+    async def _edit_existing_goal(self, goal: dict) -> None:
+        """Open a sub-dialog to edit an existing goal."""
+        goal_text_f = ft.TextField(
+            label="Objetivo",
+            value=goal.get("goal_text", ""),
+            multiline=True,
+            min_lines=2,
+            max_lines=4,
+        )
+        action_f = ft.TextField(
             label="Plan de accion",
             value=goal.get("action_plan", ""),
             multiline=True,
@@ -914,39 +1052,66 @@ class CalendarScreen:
             max_lines=4,
         )
 
-        save_btn = ft.Button(
-            "Guardar", on_click=lambda e: self.page.run_task(self._save_goal))
-        cancel_btn = ft.TextButton(
-            "Cancelar", on_click=lambda e: self._close_goals_panel())
+        async def _save_edit(_: ft.ControlEvent) -> None:
+            self.page.close(edit_dlg)
+            data = {
+                "goal_text": goal_text_f.value or "",
+                "action_plan": action_f.value or "",
+            }
+            await save_monthly_goal(
+                app_state.workspace_id, goal["year"], goal["month"], data
+            )
+            self._close_goals_dialog(None)
+            await self._open_monthly_goals()
 
-        sheet = ft.BottomSheet(
-            content=ft.Column(
-                [
-                    ft.Text("Objetivos del mes",
-                            weight=ft.FontWeight.BOLD, size=18),
-                    self._goal_text_field,
-                    self._action_plan_field,
-                    ft.Row([cancel_btn, save_btn],
-                           alignment=ft.MainAxisAlignment.END),
-                ],
-                spacing=10,
-                tight=True,
-                scroll=ft.ScrollMode.AUTO,
+        edit_dlg = ft.AlertDialog(
+            title=ft.Text(
+                f"Editar: {calendar.month_name[goal['month']]} {goal['year']}"),
+            content=ft.Container(
+                content=ft.Column([goal_text_f, action_f], spacing=10),
+                padding=ft.Padding(top=10, bottom=10, left=10, right=10),
             ),
-            open=True,
+            actions=[
+                ft.TextButton("Cancelar",
+                              on_click=lambda e: self.page.close(edit_dlg)),
+                ft.ElevatedButton("Guardar", on_click=_save_edit),
+            ],
+            modal=True,
         )
-        self.page.overlay.clear()
-        self.page.overlay.append(sheet)
+        edit_dlg.open = True
+        self.page.overlay.append(edit_dlg)
         self.page.update()
 
-    async def _save_goal(self) -> None:
-        data = {
-            "goal_text": self._goal_text_field.value,
-            "action_plan": self._action_plan_field.value,
-        }
-        await save_monthly_goal(app_state.workspace_id, self.current_year, self.current_month, data)
-        self._close_goals_panel()
+    async def _delete_existing_goal(self, goal: dict) -> None:
+        """Confirm and delete a goal."""
+        async def _confirm(_: ft.ControlEvent) -> None:
+            self.page.close(confirm_dlg)
+            await delete_goal_api(
+                app_state.workspace_id, goal["year"], goal["month"]
+            )
+            self._close_goals_dialog(None)
+            await self._open_monthly_goals()
 
-    def _close_goals_panel(self) -> None:
+        confirm_dlg = ft.AlertDialog(
+            title=ft.Text("Eliminar objetivo"),
+            content=ft.Text(
+                f"¿Eliminar objetivo de "
+                f"{calendar.month_name[goal['month']]} {goal['year']}?"
+            ),
+            actions=[
+                ft.TextButton(
+                    "Cancelar",
+                    on_click=lambda e: self.page.close(confirm_dlg),
+                ),
+                ft.ElevatedButton("Eliminar", on_click=_confirm),
+            ],
+            modal=True,
+        )
+        confirm_dlg.open = True
+        self.page.overlay.append(confirm_dlg)
+        self.page.update()
+
+    def _close_goals_dialog(self, e: ft.ControlEvent | None) -> None:
+        """Close the monthly goals dialog."""
         self.page.overlay.clear()
         self.page.update()
