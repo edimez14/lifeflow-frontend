@@ -15,8 +15,8 @@ from api.calendar_api import (
     fetch_event_categories,
 )
 from api.monthly_goals_api import (
-    fetch_monthly_goal,
-    save_monthly_goal,
+    create_monthly_goal,
+    update_monthly_goal,
     list_all_monthly_goals,
     delete_monthly_goal as delete_goal_api,
 )
@@ -1014,15 +1014,12 @@ class CalendarScreen:
         """Save current month's goal and refresh the dialog."""
         try:
             data = {
+                "year": self.current_year,
+                "month": self.current_month,
                 "goal_text": self._goal_text_field.value or "",
                 "action_plan": self._action_plan_field.value or "",
             }
-            await save_monthly_goal(
-                app_state.workspace_id,
-                self.current_year,
-                self.current_month,
-                data,
-            )
+            await create_monthly_goal(app_state.workspace_id, data)
             # Close current dialog
             if self._goals_dlg:
                 self._goals_dlg.open = False
@@ -1062,8 +1059,8 @@ class CalendarScreen:
                 "action_plan": action_f.value or "",
             }
             try:
-                await save_monthly_goal(
-                    app_state.workspace_id, goal["year"], goal["month"], data
+                await update_monthly_goal(
+                    app_state.workspace_id, goal["id"], data
                 )
             except Exception as ex:
                 print(f"Error saving goal: {ex}")
@@ -1103,7 +1100,7 @@ class CalendarScreen:
             self.page.close(confirm_dlg)
             try:
                 await delete_goal_api(
-                    app_state.workspace_id, goal["year"], goal["month"]
+                    app_state.workspace_id, goal["id"]
                 )
             except Exception as ex:
                 print(f"Error deleting goal: {ex}")
