@@ -5,18 +5,26 @@ from datetime import datetime, timedelta
 
 import flet as ft
 
-from api.calendar_api import fetch_calendars, fetch_events
+from api.calendar_api import (
+    fetch_calendars,
+    fetch_events,
+    create_event,
+    update_event,
+    delete_event,
+    create_calendar,
+    fetch_event_categories,
+)
 from api.monthly_goals_api import fetch_monthly_goal, save_monthly_goal
 from components.event_card import EventCard
 from state.app_state import app_state
 from state.ws_client import register_handler, unregister_handler
 
 
-HOUR_HEIGHT = 60  # pixels per hour in daily view
+HOUR_HEIGHT = 60
 
 
 class CalendarScreen:
-    """Calendar screen with monthly, weekly, daily and annual views."""
+    """Pantalla de calendario con vistas mensual, semanal, diaria y anual."""
 
     def __init__(self, page: ft.Page) -> None:
         self.page = page
@@ -30,17 +38,22 @@ class CalendarScreen:
         self.current_daily_date = today
         self.current_annual_year = today.year
 
-        self.current_view = "month"  # "month", "week", "day" or "year"
+        self.current_view = "month"
+
+        # Cache de eventos del mes para el panel de detalle
+        self._events_by_date: dict[str, list[dict]] = {}
 
         # UI controls
         self.month_label = ft.Text(size=18, weight=ft.FontWeight.BOLD)
         self.week_label = ft.Text(size=18, weight=ft.FontWeight.BOLD)
         self.day_label = ft.Text(size=18, weight=ft.FontWeight.BOLD)
         self.year_label = ft.Text(size=18, weight=ft.FontWeight.BOLD)
-        self.grid = ft.Column(spacing=2)
-        self.detail_panel = ft.Column(visible=False, width=250)
+        self.grid = ft.Column(spacing=2, expand=True)
+        self.detail_panel = ft.Column(
+            visible=False, width=280, scroll=ft.ScrollMode.AUTO
+        )
+        self.detail_divider = ft.VerticalDivider(visible=False)
 
-        # Monthly goals button
         self.goals_btn = ft.IconButton(
             icon=ft.Icons.FLAG,
             tooltip="Objetivos del mes",
@@ -51,7 +64,6 @@ class CalendarScreen:
         self._register_ws_handlers()
 
     def _register_ws_handlers(self) -> None:
-        """Register WebSocket event handlers to keep the calendar in sync."""
         async def on_event_created(data: dict) -> None:
             await self._load_data()
 
@@ -66,52 +78,54 @@ class CalendarScreen:
         register_handler("event.deleted", on_event_deleted)
 
     def dispose(self) -> None:
-        """Remove WebSocket handlers when the screen is not visible."""
         unregister_handler("event.created")
         unregister_handler("event.updated")
         unregister_handler("event.deleted")
 
     def _build_view(self) -> ft.Control:
-        """Build the full calendar layout with view switcher."""
         month_btn = ft.Button(
             "Mes", on_click=lambda e: self._switch_view("month"))
         week_btn = ft.Button(
             "Semana", on_click=lambda e: self._switch_view("week"))
-        day_btn = ft.Button(
-            "Día", on_click=lambda e: self._switch_view("day"))
+        day_btn = ft.Button("Dia", on_click=lambda e: self._switch_view("day"))
         year_btn = ft.Button(
-            "Año", on_click=lambda e: self._switch_view("year"))
+            "Ano", on_click=lambda e: self._switch_view("year"))
         view_selector = ft.Row(
-            [month_btn, week_btn, day_btn,
-                year_btn], alignment=ft.MainAxisAlignment.CENTER
+            [month_btn, week_btn, day_btn, year_btn],
+            alignment=ft.MainAxisAlignment.CENTER,
+            spacing=8,
         )
 
         self.nav_controls = ft.Row(
             alignment=ft.MainAxisAlignment.SPACE_BETWEEN)
         self._update_nav_controls()
 
-        header = ft.Column([view_selector, self.nav_controls])
-
-        body = ft.Row(
-            [self.grid, ft.VerticalDivider(), self.detail_panel],
-            expand=True,
-            vertical_alignment=ft.CrossAxisAlignment.START,
+        header = ft.Column(
+            [view_selector, self.nav_controls],
+            horizontal_alignment=ft.CrossAxisAlignment.CENTER,
+            spacing=6,
         )
 
-        return ft.Column([header, body], expand=True)
+        body = ft.Row(
+            [self.grid, self.detail_divider, self.detail_panel],
+            expand=True,
+            vertical_alignment=ft.CrossAxisAlignment.START,
+            alignment=ft.MainAxisAlignment.CENTER,
+        )
+
+        return ft.Column([header, body], expand=True, spacing=12)
 
     def _switch_view(self, view: str) -> None:
-        """Switch between views."""
         self.current_view = view
         if view == "day" and self.current_daily_date is None:
             self.current_daily_date = datetime.now()
         if view == "year":
             self.current_annual_year = self.current_year
+        self._hide_detail_panel()
         self._update_nav_controls()
         self.page.run_task(self._load_data)
 
     def _update_nav_controls(self) -> None:
-        """Set navigation buttons according to current view."""
         if self.current_view == "month":
             prev_btn = ft.IconButton(
                 icon=ft.Icons.CHEVRON_LEFT, on_click=self._prev_month)
@@ -126,7 +140,7 @@ class CalendarScreen:
             next_btn = ft.IconButton(
                 icon=ft.Icons.CHEVRON_RIGHT, on_click=self._next_week)
             self.nav_controls.controls = [prev_btn, self.week_label, next_btn]
-        else:  # day
+        else:
             prev_btn = ft.IconButton(
                 icon=ft.Icons.CHEVRON_LEFT, on_click=self._prev_day)
             next_btn = ft.IconButton(
@@ -174,7 +188,6 @@ class CalendarScreen:
         await self._load_data()
 
     async def _load_data(self) -> None:
-        """Update header label and trigger async reload."""
         if self.current_view == "month":
             self.month_label.value = f"{calendar.month_name[self.current_month]} {self.current_year}"
         elif self.current_view == "week":
@@ -189,7 +202,6 @@ class CalendarScreen:
         self.page.run_task(self._async_load)
 
     async def _async_load(self) -> None:
-        """Async task to load events and build the active view."""
         calendars = await fetch_calendars(app_state.workspace_id)
         cal_colors = {c["id"]: c.get("color", "#2196F3") for c in calendars}
 
@@ -222,19 +234,31 @@ class CalendarScreen:
             key = dt.isoformat()
             events_by_date.setdefault(key, []).append(ev)
 
+        self._events_by_date = events_by_date
+
         self.grid.controls.clear()
 
-        day_names = ["Lun", "Mar", "Mié", "Jue", "Vie", "Sáb", "Dom"]
+        day_names = ["Lun", "Mar", "Mie", "Jue", "Vie", "Sab", "Dom"]
         header_row = ft.Row(
-            [ft.Container(ft.Text(name, size=12), width=40,
-                          alignment=ft.Alignment(0, 0)) for name in day_names],
-            spacing=2,
+            [
+                ft.Container(
+                    ft.Text(name, size=12, text_align=ft.TextAlign.CENTER),
+                    alignment=ft.Alignment(0, 0),
+                    padding=4,
+                    expand=1,
+                )
+                for name in day_names
+            ],
+            spacing=6,
+            alignment=ft.MainAxisAlignment.CENTER,
+            expand=True,
         )
         self.grid.controls.append(header_row)
 
         current = start_of_week
         while current <= end_of_week:
-            week_row = ft.Row(spacing=2)
+            week_row = ft.Row(spacing=6, expand=True,
+                              alignment=ft.MainAxisAlignment.CENTER)
             for _ in range(7):
                 day_container = self._build_day_cell(
                     current, events_by_date, first_day, last_day, cal_colors)
@@ -242,15 +266,11 @@ class CalendarScreen:
                 current += timedelta(days=1)
             self.grid.controls.append(week_row)
 
-    # ------------------------------------------------------------------
-    # Weekly view
-    # ------------------------------------------------------------------
     async def _build_weekly_view(self, cal_colors: dict[str, str]) -> None:
         start = self.current_week_start
         end = start + timedelta(days=6, hours=23, minutes=59, seconds=59)
 
         events = await fetch_events(app_state.workspace_id, start, end)
-
         events_by_day: dict[datetime, list[dict]] = {}
         for ev in events:
             dt = datetime.fromisoformat(ev["start_datetime"])
@@ -261,19 +281,31 @@ class CalendarScreen:
 
         hours = list(range(0, 24))
         days_of_week = [start + timedelta(days=i) for i in range(7)]
-        day_headers = [ft.Container(ft.Text(day.strftime("%a %d"), size=12, text_align=ft.TextAlign.CENTER),
-                                    width=100, alignment=ft.Alignment(0, 0)) for day in days_of_week]
+        day_headers = [
+            ft.Container(
+                ft.Text(day.strftime("%a %d"), size=12,
+                        text_align=ft.TextAlign.CENTER),
+                alignment=ft.Alignment(0, 0),
+                padding=4,
+                expand=1,
+            )
+            for day in days_of_week
+        ]
 
         empty_corner = ft.Container(width=50)
-        header_row = ft.Row([empty_corner] + day_headers, spacing=2,
-                            vertical_alignment=ft.CrossAxisAlignment.CENTER)
+        header_row = ft.Row(
+            [empty_corner] + day_headers,
+            spacing=6,
+            vertical_alignment=ft.CrossAxisAlignment.CENTER,
+            expand=True,
+        )
         self.grid.controls.append(header_row)
 
         for hour in hours:
             hour_label = ft.Container(
                 ft.Text(f"{hour:02d}:00", size=10),
                 width=50,
-                alignment=ft.Alignment(0, 0.5),  # center vertically
+                alignment=ft.Alignment(0, 0.5),
                 padding=ft.Padding.only(right=5),
             )
             cells = []
@@ -281,12 +313,9 @@ class CalendarScreen:
                 cell = self._build_hour_cell(
                     day, hour, events_by_day.get(day, []), cal_colors)
                 cells.append(cell)
-            row = ft.Row([hour_label] + cells, spacing=2)
+            row = ft.Row([hour_label] + cells, spacing=6, expand=True)
             self.grid.controls.append(row)
 
-    # ------------------------------------------------------------------
-    # Daily view
-    # ------------------------------------------------------------------
     async def _build_daily_view(self, cal_colors: dict[str, str]) -> None:
         selected_day = self.current_daily_date
         day_start = selected_day.replace(hour=0, minute=0, second=0)
@@ -303,12 +332,12 @@ class CalendarScreen:
                     ft.Container(
                         ft.Text(f"{hour:02d}:00", size=10),
                         width=50,
-                        alignment=ft.Alignment(1, 0.5),  # center_right
+                        alignment=ft.Alignment(1, 0.5),
                         padding=ft.Padding.only(right=5),
                     ),
                     ft.Container(
-                        border=ft.border.only(
-                            bottom=ft.border.BorderSide(1, ft.Colors.GREY_200)),
+                        border=ft.Border.only(
+                            bottom=ft.BorderSide(1, ft.Colors.GREY_200)),
                         expand=True,
                         height=HOUR_HEIGHT,
                     ),
@@ -320,10 +349,10 @@ class CalendarScreen:
 
         event_blocks = []
         for ev in events:
-            start = datetime.fromisoformat(ev["start_datetime"])
-            end = datetime.fromisoformat(ev["end_datetime"])
-            start_hour = start.hour + start.minute / 60.0
-            end_hour = end.hour + end.minute / 60.0
+            start_dt = datetime.fromisoformat(ev["start_datetime"])
+            end_dt = datetime.fromisoformat(ev["end_datetime"])
+            start_hour = start_dt.hour + start_dt.minute / 60.0
+            end_hour = end_dt.hour + end_dt.minute / 60.0
             duration_hours = max(end_hour - start_hour, 0.25)
 
             top = start_hour * HOUR_HEIGHT
@@ -351,11 +380,7 @@ class CalendarScreen:
         stack = ft.Stack(controls=hour_labels + event_blocks, expand=True)
         self.grid.controls.append(stack)
 
-    # ------------------------------------------------------------------
-    # Annual view
-    # ------------------------------------------------------------------
     async def _build_annual_view(self, cal_colors: dict[str, str]) -> None:
-        """Build annual view: 12 mini monthly calendars in a grid."""
         year = self.current_annual_year
         start_dt = datetime(year, 1, 1)
         end_dt = datetime(year, 12, 31, 23, 59, 59)
@@ -368,7 +393,7 @@ class CalendarScreen:
             events_by_date.setdefault(key, []).append(ev)
 
         self.grid.controls.clear()
-        self.grid.scroll = ft.ScrollMode.AUTO
+        self.grid.scroll = None
 
         months = []
         for month in range(1, 13):
@@ -377,25 +402,21 @@ class CalendarScreen:
             months.append(month_container)
 
         rows = []
-        for i in range(0, 12, 3):
-            row = ft.Row(months[i:i+3], spacing=10,
-                         alignment=ft.MainAxisAlignment.START)
+        for i in range(0, 12, 4):
+            row = ft.Row(
+                months[i:i + 4],
+                spacing=14,
+                alignment=ft.MainAxisAlignment.CENTER,
+                expand=True,
+            )
             rows.append(row)
-
         self.grid.controls.extend(rows)
 
-    def _build_mini_month(
-        self,
-        year: int,
-        month: int,
-        events_by_date: dict[tuple[int, int], list[dict]],
-        cal_colors: dict[str, str],
-    ) -> ft.Container:
-        """Build a small monthly calendar for the annual view."""
+    def _build_mini_month(self, year: int, month: int, events_by_date: dict[tuple[int, int], list[dict]], cal_colors: dict[str, str]) -> ft.Container:
         month_name = calendar.month_name[month]
         cal_data = calendar.monthcalendar(year, month)
 
-        day_headers = ["Lu", "Ma", "Mi", "Ju", "Vi", "Sá", "Do"]
+        day_headers = ["Lu", "Ma", "Mi", "Ju", "Vi", "Sa", "Do"]
         header_row = ft.Row(
             [ft.Text(h, size=8, text_align=ft.TextAlign.CENTER, width=18)
              for h in day_headers],
@@ -417,12 +438,11 @@ class CalendarScreen:
                         dot_color = ev.get("color") or cal_colors.get(
                             ev["calendar_id"], "#2196F3")
                         dot = ft.Container(
-                            width=5, height=5,
-                            bgcolor=dot_color,
-                            border_radius=ft.BorderRadius(5, 5, 5, 5),
+                            width=5, height=5, bgcolor=dot_color, border_radius=ft.BorderRadius(5, 5, 5, 5),
                         )
 
                     day_date = datetime(year, month, day)
+                    captured_day = day_date
                     cell = ft.Container(
                         content=ft.Column(
                             [
@@ -434,9 +454,10 @@ class CalendarScreen:
                             spacing=1,
                             tight=True,
                         ),
-                        width=22, height=28,
-                        alignment=ft.Alignment(0, 0),  # center
-                        on_click=lambda e, d=day_date: self._on_annual_day_click(
+                        width=22,
+                        height=28,
+                        alignment=ft.Alignment(0, 0),
+                        on_click=lambda e, d=captured_day: self._on_annual_day_click(
                             d),
                     )
                 day_cells.append(cell)
@@ -444,37 +465,42 @@ class CalendarScreen:
                               alignment=ft.MainAxisAlignment.CENTER)
             week_rows.append(week_row)
 
+        month_title = ft.Container(
+            content=ft.Text(
+                month_name, size=11, weight=ft.FontWeight.BOLD, text_align=ft.TextAlign.CENTER),
+            alignment=ft.Alignment(0, 0),
+            padding=2,
+            ink=True,
+            on_click=lambda e, y=year, m=month: self._on_annual_month_click(
+                y, m),
+        )
+
         content = ft.Column(
-            [
-                ft.Text(month_name, size=11, weight=ft.FontWeight.BOLD,
-                        text_align=ft.TextAlign.CENTER),
-                header_row,
-                *week_rows,
-            ],
+            [month_title, header_row, *week_rows],
             spacing=2,
             horizontal_alignment=ft.CrossAxisAlignment.CENTER,
         )
         return ft.Container(
             content=content,
-            padding=5,
-            border=ft.border.all(1, ft.Colors.GREY_300),
+            padding=8,
+            border=ft.Border.all(1, ft.Colors.GREY_300),
             border_radius=5,
-            width=160,
-            height=190,
+            width=190,
+            height=205,
         )
 
     def _on_annual_day_click(self, date: datetime) -> None:
-        """When a day in the annual view is clicked, switch to daily view."""
         self.current_daily_date = date
         self._switch_view("day")
 
-    # ------------------------------------------------------------------
-    # Helper for weekly view hour cell
-    # ------------------------------------------------------------------
+    def _on_annual_month_click(self, year: int, month: int) -> None:
+        self.current_year = year
+        self.current_month = month
+        self._switch_view("month")
+
     def _build_hour_cell(self, day: datetime, hour: int, events: list[dict], cal_colors: dict[str, str]) -> ft.Container:
-        cell_width = 100
-        cell_height = 40
-        cell_border = ft.border.all(1, ft.Colors.GREY_200)
+        cell_height = 44
+        cell_border = ft.Border.all(1, ft.Colors.GREY_200)
 
         hour_start = day.replace(hour=hour, minute=0, second=0)
         hour_end = hour_start + timedelta(hours=1)
@@ -487,7 +513,7 @@ class CalendarScreen:
                 overlapping_events.append(ev)
 
         if not overlapping_events:
-            return ft.Container(border=cell_border, width=cell_width, height=cell_height)
+            return ft.Container(border=cell_border, expand=True, height=cell_height)
 
         blocks = []
         for ev in overlapping_events[:2]:
@@ -506,13 +532,13 @@ class CalendarScreen:
         return ft.Container(
             ft.Row(blocks, spacing=1),
             border=cell_border,
-            width=cell_width,
+            expand=True,
             height=cell_height,
             padding=1,
         )
 
     # ------------------------------------------------------------------
-    # Day cell for monthly view
+    # Day cell for monthly view (con eventos visibles)
     # ------------------------------------------------------------------
     def _build_day_cell(self, date: datetime, events_by_date: dict[str, list[dict]], first: datetime, last: datetime, cal_colors: dict[str, str]) -> ft.Container:
         is_current = first <= date <= last
@@ -522,78 +548,381 @@ class CalendarScreen:
         date_key = date.date().isoformat()
         day_events = events_by_date.get(date_key, [])
 
-        day_number = ft.Text(str(date.day), size=14, color=text_color,
-                             weight=ft.FontWeight.BOLD if is_current else ft.FontWeight.NORMAL)
+        day_number = ft.Text(
+            str(date.day), size=14, color=text_color,
+            weight=ft.FontWeight.BOLD if is_current else ft.FontWeight.NORMAL,
+        )
+
+        # Eventos visibles dentro de la card del dia, con color segun categoria
+        CAT_COLORS = {
+            "importante": "#FF9800",
+            "urgente": "#F44336",
+            "especial": "#9C27B0",
+            "repetitivo": "#2196F3",
+            "solo_una_vez": "#4CAF50",
+        }
 
         event_labels = []
         for ev in day_events[:3]:
             color = ev.get("color") or cal_colors.get(
                 ev["calendar_id"], "#2196F3")
+            cat = ev.get("category")
+            display_color = CAT_COLORS.get(cat, color)
             label = ft.Container(
                 ft.Text(ev["title"][:10], size=10, color=ft.Colors.WHITE),
-                bgcolor=color,
+                bgcolor=display_color,
                 padding=2,
                 border_radius=3,
                 margin=ft.margin.only(top=1),
             )
             event_labels.append(label)
+
         if len(day_events) > 3:
             event_labels.append(
-                ft.Text(f"+{len(day_events)-3}", size=10, color=ft.Colors.GREY_600))
+                ft.Text(f"+{len(day_events)-3}", size=10,
+                        color=ft.Colors.GREY_600)
+            )
 
         cell = ft.Container(
-            ft.Column([day_number, *event_labels], spacing=1, tight=True,
-                      horizontal_alignment=ft.CrossAxisAlignment.START),
-            padding=4,
+            ft.Column(
+                [day_number, *event_labels],
+                spacing=2,
+                tight=True,
+                horizontal_alignment=ft.CrossAxisAlignment.START,
+            ),
+            padding=6,
             bgcolor=bg_color,
             border=ft.Border.all(1, ft.Colors.GREY_300),
-            border_radius=4,
-            width=90,
-            height=90,
-            on_click=lambda e, d=date: self._on_day_click(d, events_by_date),
+            border_radius=6,
+            height=110,
+            expand=1,
+            on_click=lambda e, captured_date=date: self._on_day_click(
+                captured_date),
         )
         return cell
 
-    def _on_day_click(self, date: datetime, events_by_date: dict[str, list[dict]]) -> None:
+    # ------------------------------------------------------------------
+    # Detail panel: ver eventos + cerrar + agregar evento
+    # ------------------------------------------------------------------
+    def _on_day_click(self, date: datetime) -> None:
         date_key = date.date().isoformat()
-        day_events = events_by_date.get(date_key, [])
+        day_events = self._events_by_date.get(date_key, [])
         self.selected_date = date
         self._show_detail_panel(date, day_events)
 
     def _show_detail_panel(self, date: datetime, events: list[dict]) -> None:
         self.detail_panel.controls.clear()
-        self.detail_panel.controls.append(ft.Text(
-            f"{date.day} de {calendar.month_name[date.month]}", weight=ft.FontWeight.BOLD))
+
+        # Header con titulo y boton cerrar
+        header = ft.Row(
+            [
+                ft.Text(
+                    f"{date.day} de {calendar.month_name[date.month]}",
+                    weight=ft.FontWeight.BOLD,
+                    expand=True,
+                ),
+                ft.IconButton(
+                    icon=ft.Icons.CLOSE,
+                    icon_size=20,
+                    tooltip="Cerrar",
+                    on_click=lambda e: self._hide_detail_panel(),
+                ),
+            ],
+            spacing=0,
+        )
+        self.detail_panel.controls.append(header)
+
+        # Boton agregar evento
+        add_btn = ft.Button(
+            "Agregar evento",
+            icon=ft.Icons.ADD,
+            on_click=lambda e, d=date: self.page.run_task(
+                self._open_create_event_modal, d),
+        )
+        self.detail_panel.controls.append(add_btn)
+
+        # Separador
+        self.detail_panel.controls.append(ft.Divider(height=10))
+
+        # Lista de eventos del dia
         if not events:
             self.detail_panel.controls.append(
-                ft.Text("Sin eventos", italic=True))
+                ft.Text("Sin eventos", italic=True, size=14))
         else:
             for ev in events:
-                event_card = EventCard(
+                card = EventCard(
                     event=ev,
                     cal_colors={},
-                    on_edit=lambda e: None,
-                    on_delete=lambda e: None,
+                    on_edit=lambda e, ev=ev: self.page.run_task(
+                        self._edit_event, ev),
+                    on_delete=lambda e, ev=ev: self.page.run_task(
+                        self._delete_event, ev),
                 )
-                self.detail_panel.controls.append(event_card)
+                self.detail_panel.controls.append(card)
+
         self.detail_panel.visible = True
+        self.detail_divider.visible = True
         self.page.update()
 
-    async def _open_monthly_goals(self) -> None:
-        """Fetch the current monthly goal and show a bottom sheet to edit it."""
-        goal = await fetch_monthly_goal(
-            app_state.workspace_id, self.current_year, self.current_month
+    def _hide_detail_panel(self) -> None:
+        self.detail_panel.visible = False
+        self.detail_divider.visible = False
+        self.page.update()
+
+    async def _edit_event(self, event: dict) -> None:
+        """Show a dialog to edit an existing event."""
+        from datetime import datetime as dt_
+
+        title_f = ft.TextField(label="Titulo", value=event.get("title", ""))
+        desc_f = ft.TextField(
+            label="Descripcion", multiline=True, min_lines=2, max_lines=4,
+            value=event.get("description", ""),
         )
 
+        start = dt_.fromisoformat(event["start_datetime"])
+        end = dt_.fromisoformat(event["end_datetime"])
+        start_f = ft.TextField(
+            label="Hora inicio (HH:MM)",
+            value=start.strftime("%H:%M"), width=120,
+        )
+        end_f = ft.TextField(
+            label="Hora fin (HH:MM)",
+            value=end.strftime("%H:%M"), width=120,
+        )
+        color_f = ft.TextField(
+            label="Color hex", value=event.get("color", "#2196F3"), width=140,
+        )
+
+        contenido = ft.Column([
+            ft.Text("Editar evento", weight=ft.FontWeight.BOLD, size=18),
+            title_f, desc_f,
+            ft.Row([start_f, end_f], spacing=10),
+            color_f,
+        ], spacing=10, tight=True, scroll=ft.ScrollMode.AUTO, width=350)
+
+        def cerrar_dlg():
+            dlg.open = False
+            self.page.update()
+
+        async def guardar():
+            if not title_f.value:
+                title_f.error_text = "Titulo obligatorio"
+                self.page.update()
+                return
+            try:
+                date_str = start.date().isoformat()
+                sd = dt_.fromisoformat(f"{date_str}T{start_f.value}:00")
+                ed = dt_.fromisoformat(f"{date_str}T{end_f.value}:00")
+            except Exception:
+                title_f.error_text = "Hora invalida (HH:MM)"
+                self.page.update()
+                return
+            data = {
+                "title": title_f.value,
+                "description": desc_f.value or None,
+                "start_datetime": sd.isoformat(),
+                "end_datetime": ed.isoformat(),
+                "color": color_f.value or None,
+            }
+            try:
+                await update_event(app_state.workspace_id, event["id"], data)
+            except Exception as ex:
+                title_f.error_text = f"Error: {ex}"
+                self.page.update()
+                return
+            cerrar_dlg()
+            await self._load_data()
+
+        dlg = ft.AlertDialog(
+            title=ft.Text("Editar evento"),
+            content=contenido,
+            actions=[
+                ft.TextButton("Cancelar", on_click=lambda e: cerrar_dlg()),
+                ft.Button(
+                    "Guardar", on_click=lambda e: self.page.run_task(guardar)),
+            ],
+            actions_alignment=ft.MainAxisAlignment.END,
+        )
+        dlg.open = True
+        self.page.overlay.append(dlg)
+        self.page.update()
+
+    async def _delete_event(self, event: dict) -> None:
+        """Confirm and delete an event."""
+        async def confirmar():
+            try:
+                await delete_event(app_state.workspace_id, event["id"])
+            except Exception:
+                pass  # silently ignore — WS refresh will update UI
+            dlg.open = False
+            self.page.update()
+            await self._load_data()
+
+        dlg = ft.AlertDialog(
+            title=ft.Text("Eliminar evento"),
+            content=ft.Text(f"¿Eliminar \"{event.get('title', '')}\"?"),
+            actions=[
+                ft.TextButton("Cancelar",
+                              on_click=lambda e: self._close_dialog(e)),
+                ft.Button("Eliminar",
+                          on_click=lambda e: self.page.run_task(confirmar)),
+            ],
+            actions_alignment=ft.MainAxisAlignment.END,
+        )
+        dlg.open = True
+        self.page.overlay.append(dlg)
+        self.page.update()
+
+    def _close_dialog(self, e: ft.ControlEvent) -> None:
+        """Close the current dialog."""
+        if self.page.overlay:
+            for ctrl in self.page.overlay:
+                if isinstance(ctrl, ft.AlertDialog) and ctrl.open:
+                    ctrl.open = False
+                    self.page.update()
+                    return
+
+    # ------------------------------------------------------------------
+    # Modal para crear nuevo evento (AlertDialog)
+    # ------------------------------------------------------------------
+    async def _open_create_event_modal(self, date: datetime) -> None:
+        """Abre un dialogo para crear evento."""
+        title_f = ft.TextField(
+            label="Titulo", hint_text="Ej: Reunion", autofocus=True)
+        desc_f = ft.TextField(label="Descripcion",
+                              multiline=True, min_lines=2, max_lines=4)
+        start_f = ft.TextField(
+            label="Hora inicio (HH:MM)", value="09:00", width=120)
+        end_f = ft.TextField(label="Hora fin (HH:MM)",
+                             value="10:00", width=120)
+        date_str = date.strftime("%Y-%m-%d")
+
+        cals = await fetch_calendars(app_state.workspace_id)
+        print(f"[DEBUG] calendarios obtenidos: {cals}")
+
+        # Si no hay calendarios, crear uno por defecto
+        if not cals:
+            print("[DEBUG] creando calendario por defecto")
+            try:
+                new_cal = await create_calendar(app_state.workspace_id, "Mi calendario", "#2196F3")
+                cals = [new_cal]
+                print(f"[DEBUG] calendario creado: {new_cal}")
+            except Exception as ex:
+                print(f"[DEBUG] error creando calendario: {ex}")
+                cals = []
+
+        cal_options = [ft.dropdown.Option(
+            key=c["id"], text=c["name"]) for c in cals]
+        cal_f = ft.Dropdown(
+            label="Calendario",
+            options=cal_options,
+            value=cals[0]["id"] if cals else None,
+        )
+        print(f"[DEBUG] cal_f.value = {cal_f.value}")
+
+        try:
+            cats = await fetch_event_categories()
+        except:
+            cats = []
+
+        cat_options = [ft.dropdown.Option(
+            key=c.get("value", c.get("name", "")),
+            text=c.get("label", c.get("name", ""))
+        ) for c in cats] if cats else []
+        cat_f = ft.Dropdown(
+            label="Categoria",
+            options=cat_options,
+            value=None,
+        )
+        color_f = ft.TextField(label="Color hex", value="#2196F3", width=140)
+
+        contenido = ft.Column([
+            ft.Text("Nuevo evento", weight=ft.FontWeight.BOLD, size=18),
+            title_f, desc_f,
+            ft.Row([ft.Text(f"Fecha: {date_str}")], spacing=5),
+            ft.Row([start_f, end_f], spacing=10),
+            cal_f, cat_f, color_f,
+        ], spacing=10, tight=True, scroll=ft.ScrollMode.AUTO, width=350)
+
+        def cerrar_dlg():
+            dlg.open = False
+            self.page.update()
+
+        async def guardar_evento():
+            print("[DEBUG] guardar_evento iniciado")
+            if not title_f.value:
+                print("[DEBUG] titulo vacio")
+                title_f.error_text = "Titulo obligatorio"
+                self.page.update()
+                return
+            try:
+                sd = datetime.fromisoformat(f"{date_str}T{start_f.value}:00")
+                ed = datetime.fromisoformat(f"{date_str}T{end_f.value}:00")
+                print(f"[DEBUG] fechas parseadas: {sd} - {ed}")
+            except Exception as ex:
+                print(f"[DEBUG] error parseando fechas: {ex}")
+                title_f.error_text = "Hora invalida (HH:MM)"
+                self.page.update()
+                return
+            if not cal_f.value:
+                print("[DEBUG] calendario no seleccionado")
+                title_f.error_text = "Selecciona calendario"
+                self.page.update()
+                return
+            data = {
+                "calendar_id": cal_f.value, "title": title_f.value,
+                "description": desc_f.value or None,
+                "start_datetime": sd.isoformat(), "end_datetime": ed.isoformat(),
+                "category": cat_f.value or None, "color": color_f.value or None,
+            }
+            print(f"[DEBUG] enviando datos: {data}")
+            try:
+                result = await create_event(app_state.workspace_id, data)
+                print(f"[DEBUG] evento creado: {result}")
+            except Exception as ex:
+                print(f"[DEBUG] error creando evento: {ex}")
+                title_f.error_text = f"Error: {ex}"
+                self.page.update()
+                return
+            print("[DEBUG] cerrando dialogo y recargando")
+            cerrar_dlg()
+            await self._load_data()
+
+        async def on_guardar(e):
+            print("[DEBUG] click en guardar")
+            await guardar_evento()
+
+        dlg = ft.AlertDialog(
+            title=ft.Text("Nuevo evento"),
+            content=contenido,
+            actions=[
+                ft.TextButton("Cancelar", on_click=lambda e: cerrar_dlg()),
+                ft.Button("Guardar", on_click=on_guardar),
+            ],
+            actions_alignment=ft.MainAxisAlignment.END,
+        )
+        dlg.open = True
+        self.page.overlay.append(dlg)
+        self.page.update()
+
+    def _close_modal(self) -> None:
+        pass  # ya no se usa, se cierra con self.page.close(dlg)
+
+    # ------------------------------------------------------------------
+    # Monthly goals
+    # ------------------------------------------------------------------
+    async def _open_monthly_goals(self) -> None:
+        goal = await fetch_monthly_goal(app_state.workspace_id, self.current_year, self.current_month)
+
         self._goal_text_field = ft.TextField(
-            label="Objetivo del mes / Monthly goal",
+            label="Objetivo del mes",
             value=goal.get("goal_text", ""),
             multiline=True,
             min_lines=2,
             max_lines=4,
         )
         self._action_plan_field = ft.TextField(
-            label="Plan de acción / Action plan",
+            label="Plan de accion",
             value=goal.get("action_plan", ""),
             multiline=True,
             min_lines=2,
@@ -601,11 +930,11 @@ class CalendarScreen:
         )
 
         save_btn = ft.Button(
-            "Guardar / Save", on_click=lambda e: self.page.run_task(self._save_goal))
+            "Guardar", on_click=lambda e: self.page.run_task(self._save_goal))
         cancel_btn = ft.TextButton(
             "Cancelar", on_click=lambda e: self._close_goals_panel())
 
-        bottom_sheet = ft.BottomSheet(
+        sheet = ft.BottomSheet(
             content=ft.Column(
                 [
                     ft.Text("Objetivos del mes",
@@ -622,24 +951,17 @@ class CalendarScreen:
             open=True,
         )
         self.page.overlay.clear()
-        self.page.overlay.append(bottom_sheet)
+        self.page.overlay.append(sheet)
         self.page.update()
 
     async def _save_goal(self) -> None:
-        """Persist the monthly goal via the API and close the editor."""
         data = {
             "goal_text": self._goal_text_field.value,
             "action_plan": self._action_plan_field.value,
         }
-        await save_monthly_goal(
-            app_state.workspace_id,
-            self.current_year,
-            self.current_month,
-            data,
-        )
+        await save_monthly_goal(app_state.workspace_id, self.current_year, self.current_month, data)
         self._close_goals_panel()
 
     def _close_goals_panel(self) -> None:
-        """Remove the monthly goals bottom sheet."""
         self.page.overlay.clear()
         self.page.update()
