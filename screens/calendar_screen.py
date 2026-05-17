@@ -798,17 +798,13 @@ class CalendarScreen:
         date_str = date.strftime("%Y-%m-%d")
 
         cals = await fetch_calendars(app_state.workspace_id)
-        print(f"[DEBUG] calendarios obtenidos: {cals}")
 
         # Si no hay calendarios, crear uno por defecto
         if not cals:
-            print("[DEBUG] creando calendario por defecto")
             try:
                 new_cal = await create_calendar(app_state.workspace_id, "Mi calendario", "#2196F3")
                 cals = [new_cal]
-                print(f"[DEBUG] calendario creado: {new_cal}")
-            except Exception as ex:
-                print(f"[DEBUG] error creando calendario: {ex}")
+            except Exception:
                 cals = []
 
         cal_options = [ft.dropdown.Option(
@@ -818,7 +814,6 @@ class CalendarScreen:
             options=cal_options,
             value=cals[0]["id"] if cals else None,
         )
-        print(f"[DEBUG] cal_f.value = {cal_f.value}")
 
         try:
             cats = await fetch_event_categories()
@@ -849,23 +844,18 @@ class CalendarScreen:
             self.page.update()
 
         async def guardar_evento():
-            print("[DEBUG] guardar_evento iniciado")
             if not title_f.value:
-                print("[DEBUG] titulo vacio")
                 title_f.error_text = "Titulo obligatorio"
                 self.page.update()
                 return
             try:
                 sd = datetime.fromisoformat(f"{date_str}T{start_f.value}:00")
                 ed = datetime.fromisoformat(f"{date_str}T{end_f.value}:00")
-                print(f"[DEBUG] fechas parseadas: {sd} - {ed}")
-            except Exception as ex:
-                print(f"[DEBUG] error parseando fechas: {ex}")
+            except Exception:
                 title_f.error_text = "Hora invalida (HH:MM)"
                 self.page.update()
                 return
             if not cal_f.value:
-                print("[DEBUG] calendario no seleccionado")
                 title_f.error_text = "Selecciona calendario"
                 self.page.update()
                 return
@@ -875,21 +865,16 @@ class CalendarScreen:
                 "start_datetime": sd.isoformat(), "end_datetime": ed.isoformat(),
                 "category": cat_f.value or None, "color": color_f.value or None,
             }
-            print(f"[DEBUG] enviando datos: {data}")
             try:
-                result = await create_event(app_state.workspace_id, data)
-                print(f"[DEBUG] evento creado: {result}")
+                await create_event(app_state.workspace_id, data)
             except Exception as ex:
-                print(f"[DEBUG] error creando evento: {ex}")
                 title_f.error_text = f"Error: {ex}"
                 self.page.update()
                 return
-            print("[DEBUG] cerrando dialogo y recargando")
             cerrar_dlg()
             await self._load_data()
 
         async def on_guardar(e):
-            print("[DEBUG] click en guardar")
             await guardar_evento()
 
         dlg = ft.AlertDialog(
