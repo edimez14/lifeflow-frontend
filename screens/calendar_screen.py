@@ -1149,7 +1149,9 @@ class CalendarScreen:
                 self.page.overlay.pop(i)
 
     def _close_goals_dialog(self, e: ft.ControlEvent) -> None:
-        """Close the monthly goals dialog."""
+        """Close the monthly goals dialog and remove all AlertDialogs from overlay."""
         if self._goals_dlg:
             self._goals_dlg.open = False
             self.page.update()
+        self._clean_stale_dialogs()
+        self.page.update()
