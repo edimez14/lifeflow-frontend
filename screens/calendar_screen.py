@@ -894,13 +894,8 @@ class CalendarScreen:
     # ------------------------------------------------------------------
     async def _open_monthly_goals(self) -> None:
         """Open a centered dialog to view, create, edit and delete monthly goals."""
-        print("DEBUG: _open_monthly_goals called")
-        self.page.snack_bar = ft.SnackBar(
-            ft.Text("Cargando objetivos..."), open=True)
-        self.page.update()
         try:
             goals = await list_all_monthly_goals(app_state.workspace_id)
-            print(f"DEBUG: goals loaded = {len(goals)}")
         except Exception as e:
             print(f"Error loading monthly goals: {e}")
             goals = []
