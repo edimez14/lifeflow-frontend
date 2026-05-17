@@ -1053,7 +1053,9 @@ class CalendarScreen:
         )
 
         async def _save_edit(_: ft.ControlEvent) -> None:
-            self.page.close(edit_dlg)
+            edit_dlg.open = False
+            self._clean_stale_dialogs()
+            self.page.update()
             data = {
                 "goal_text": goal_text_f.value or "",
                 "action_plan": action_f.value or "",
@@ -1068,7 +1070,9 @@ class CalendarScreen:
             await self._open_monthly_goals()
 
         async def _cancel_edit(_: ft.ControlEvent) -> None:
-            self.page.close(edit_dlg)
+            edit_dlg.open = False
+            self._clean_stale_dialogs()
+            self.page.update()
             # Reopen main goals dialog
             await self._open_monthly_goals()
 
@@ -1086,7 +1090,9 @@ class CalendarScreen:
             actions_alignment=ft.MainAxisAlignment.END,
             modal=True,
         )
-        self.page.open(edit_dlg)
+        edit_dlg.open = True
+        self.page.overlay.append(edit_dlg)
+        self.page.update()
 
     async def _delete_existing_goal(self, goal: dict) -> None:
         """Confirm and delete a goal."""
@@ -1097,7 +1103,9 @@ class CalendarScreen:
         self._clean_stale_dialogs()
 
         async def _confirm(_: ft.ControlEvent) -> None:
-            self.page.close(confirm_dlg)
+            confirm_dlg.open = False
+            self._clean_stale_dialogs()
+            self.page.update()
             try:
                 await delete_goal_api(
                     app_state.workspace_id, goal["id"]
@@ -1108,7 +1116,9 @@ class CalendarScreen:
             await self._open_monthly_goals()
 
         async def _cancel_delete(_: ft.ControlEvent) -> None:
-            self.page.close(confirm_dlg)
+            confirm_dlg.open = False
+            self._clean_stale_dialogs()
+            self.page.update()
             # Reopen main goals dialog
             await self._open_monthly_goals()
 
@@ -1125,7 +1135,9 @@ class CalendarScreen:
             actions_alignment=ft.MainAxisAlignment.END,
             modal=True,
         )
-        self.page.open(confirm_dlg)
+        confirm_dlg.open = True
+        self.page.overlay.append(confirm_dlg)
+        self.page.update()
 
     def _clean_stale_dialogs(self) -> None:
         """Remove any closed AlertDialogs from overlay to avoid interference."""
