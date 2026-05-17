@@ -817,7 +817,7 @@ class CalendarScreen:
 
         try:
             cats = await fetch_event_categories()
-        except:
+        except Exception:
             cats = []
 
         cat_options = [ft.dropdown.Option(
