@@ -13,13 +13,12 @@ async def start_timer(
     """Start a new timer session."""
 
     payload: dict = {
-        "workspace_id": workspace_id,
         "estimated_seconds": estimated_seconds,
     }
     if task_id is not None:
         payload["task_id"] = task_id
 
-    response = await post("/timers/start", json=payload)
+    response = await post(f"/workspaces/{workspace_id}/timers/start", json=payload)
     response.raise_for_status()
     return response.json()
 
@@ -27,10 +26,7 @@ async def start_timer(
 async def pause_timer(timer_id: str, workspace_id: str) -> dict:
     """Pause a running timer."""
 
-    response = await post(
-        f"/timers/{timer_id}/pause",
-        params={"workspace_id": workspace_id},
-    )
+    response = await post(f"/workspaces/{workspace_id}/timers/{timer_id}/pause")
     response.raise_for_status()
     return response.json()
 
@@ -38,10 +34,7 @@ async def pause_timer(timer_id: str, workspace_id: str) -> dict:
 async def resume_timer(timer_id: str, workspace_id: str) -> dict:
     """Resume a paused timer."""
 
-    response = await post(
-        f"/timers/{timer_id}/resume",
-        params={"workspace_id": workspace_id},
-    )
+    response = await post(f"/workspaces/{workspace_id}/timers/{timer_id}/resume")
     response.raise_for_status()
     return response.json()
 
@@ -49,10 +42,7 @@ async def resume_timer(timer_id: str, workspace_id: str) -> dict:
 async def cancel_timer(timer_id: str, workspace_id: str) -> dict:
     """Cancel a running or paused timer."""
 
-    response = await post(
-        f"/timers/{timer_id}/cancel",
-        params={"workspace_id": workspace_id},
-    )
+    response = await post(f"/workspaces/{workspace_id}/timers/{timer_id}/cancel")
     response.raise_for_status()
     return response.json()
 
@@ -60,10 +50,7 @@ async def cancel_timer(timer_id: str, workspace_id: str) -> dict:
 async def get_timer(timer_id: str, workspace_id: str) -> dict:
     """Get details of one timer session."""
 
-    response = await get(
-        f"/timers/{timer_id}",
-        params={"workspace_id": workspace_id},
-    )
+    response = await get(f"/workspaces/{workspace_id}/timers/{timer_id}")
     response.raise_for_status()
     return response.json()
 
@@ -71,9 +58,6 @@ async def get_timer(timer_id: str, workspace_id: str) -> dict:
 async def get_timer_history(task_id: str, workspace_id: str) -> list[dict]:
     """Return timer session history for a task."""
 
-    response = await get(
-        f"/timers/history/{task_id}",
-        params={"workspace_id": workspace_id},
-    )
+    response = await get(f"/workspaces/{workspace_id}/timers/history/{task_id}")
     response.raise_for_status()
     return response.json()
