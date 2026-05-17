@@ -110,10 +110,22 @@ class TimerWidget(ft.Container):
 
     # ── Button handlers ──────────────────────────────────
 
+    def _show_error(self, message: str) -> None:
+        """Show a snackbar with an error message."""
+        if not self.page:
+            return
+        self.page.snack_bar = ft.SnackBar(
+            content=ft.Text(message, color=ft.Colors.WHITE),
+            bgcolor=ft.Colors.RED_400,
+        )
+        self.page.snack_bar.open = True
+        self.page.update()
+
     async def _on_start_without_task(self, _: ft.ControlEvent) -> None:
         """Start a timer without linking it to any task."""
 
         if not app_state.workspace_id:
+            self._show_error("No workspace selected")
             return
 
         try:
@@ -127,39 +139,42 @@ class TimerWidget(ft.Container):
             self._task_id = None
             self._task_name = "General"
             self._update_ui_state()
-        except Exception:
-            pass
+        except Exception as ex:
+            self._show_error(f"Could not start timer: {ex}")
 
     async def _on_pause(self, _: ft.ControlEvent) -> None:
         """Pause the active timer."""
 
         if not self._timer_id or not app_state.workspace_id:
+            self._show_error("No active timer")
             return
 
         try:
             await pause_timer(self._timer_id, app_state.workspace_id)
             self._status = "paused"
             self._update_ui_state()
-        except Exception:
-            pass
+        except Exception as ex:
+            self._show_error(f"Could not pause timer: {ex}")
 
     async def _on_resume(self, _: ft.ControlEvent) -> None:
         """Resume the paused timer."""
 
         if not self._timer_id or not app_state.workspace_id:
+            self._show_error("No active timer")
             return
 
         try:
             await resume_timer(self._timer_id, app_state.workspace_id)
             self._status = "running"
             self._update_ui_state()
-        except Exception:
-            pass
+        except Exception as ex:
+            self._show_error(f"Could not resume timer: {ex}")
 
     async def _on_cancel(self, _: ft.ControlEvent) -> None:
         """Cancel the active timer."""
 
         if not self._timer_id or not app_state.workspace_id:
+            self._show_error("No active timer")
             return
 
         try:
@@ -169,8 +184,8 @@ class TimerWidget(ft.Container):
             self._status = "idle"
             self._display.show_idle()
             self._update_ui_state()
-        except Exception:
-            pass
+        except Exception as ex:
+            self._show_error(f"Could not cancel timer: {ex}")
 
     def reset(self) -> None:
         """Reset the widget to idle state."""
