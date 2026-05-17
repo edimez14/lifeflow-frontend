@@ -17,7 +17,9 @@ from api.tasks_api import (
     update_subtask,
     update_task,
 )
+from api.timer_api import start_timer
 from components.task_row import TaskRow
+from state import ws_client
 from state.app_state import app_state
 from state.ws_client import register_handler, unregister_handler
 
@@ -402,10 +404,38 @@ class TasksScreen:
 
     def _handle_start_timer(self, task: dict) -> None:
         """Handle start timer action from row component."""
-        self.page.snack_bar = ft.SnackBar(
-            ft.Text("Timer module is coming soon"))
-        self.page.snack_bar.open = True
-        self.page.update()
+        import main  # lazy import to avoid circular dependency
+
+        if not app_state.workspace_id:
+            self.page.snack_bar = ft.SnackBar(
+                ft.Text("No workspace selected"))
+            self.page.snack_bar.open = True
+            self.page.update()
+            return
+
+        task_id = str(task.get("id", ""))
+        task_title = str(task.get("title", "Untitled task"))
+
+        async def _start() -> None:
+            try:
+                result = await start_timer(
+                    workspace_id=app_state.workspace_id,
+                    estimated_seconds=0,
+                    task_id=task_id,
+                )
+                timer_widget = main._get_timer_widget(self.page)
+                timer_widget._timer_id = result["id"]
+                ws_client.set_active_timer_id(result["id"])
+                timer_widget.set_task_info(task_title, task_id)
+                timer_widget._status = "running"
+                timer_widget._update_ui_state()
+            except Exception as ex:
+                self.page.snack_bar = ft.SnackBar(
+                    ft.Text(f"Could not start timer: {ex}"))
+                self.page.snack_bar.open = True
+                self.page.update()
+
+        self.page.run_task(_start)
 
     def _handle_edit(self, task: dict) -> None:
         """Handle edit action from row component."""
