@@ -1009,7 +1009,10 @@ class CalendarScreen:
             modal=True,
         )
         self._goals_dlg = dlg
-        self.page.open(dlg)
+        # Open via page.dialog (already verified this works for showing the dialog)
+        self.page.dialog = dlg
+        dlg.open = True
+        self.page.update()
 
     async def _save_goal_from_dialog(self) -> None:
         """Save current month's goal and refresh the dialog."""
@@ -1026,7 +1029,8 @@ class CalendarScreen:
             )
             # Close current dialog
             if self._goals_dlg:
-                self.page.close(self._goals_dlg)
+                self._goals_dlg.open = False
+                self.page.update()
             # Reopen with fresh data from API
             await self._open_monthly_goals()
         except Exception as e:
@@ -1036,7 +1040,8 @@ class CalendarScreen:
         """Open a sub-dialog to edit an existing goal."""
         # Close main goals dialog first
         if self._goals_dlg:
-            self.page.close(self._goals_dlg)
+            self._goals_dlg.open = False
+            self.page.update()
 
         goal_text_f = ft.TextField(
             label="Objetivo",
@@ -1093,7 +1098,8 @@ class CalendarScreen:
         """Confirm and delete a goal."""
         # Close main goals dialog first
         if self._goals_dlg:
-            self.page.close(self._goals_dlg)
+            self._goals_dlg.open = False
+            self.page.update()
 
         async def _confirm(_: ft.ControlEvent) -> None:
             self.page.close(confirm_dlg)
@@ -1134,4 +1140,5 @@ class CalendarScreen:
     def _close_goals_dialog(self, e: ft.ControlEvent) -> None:
         """Close the monthly goals dialog."""
         if self._goals_dlg:
-            self.page.close(self._goals_dlg)
+            self._goals_dlg.open = False
+            self.page.update()
