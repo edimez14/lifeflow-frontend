@@ -1023,7 +1023,9 @@ class CalendarScreen:
                 self.current_month,
                 data,
             )
-            self._close_goals_dialog(None)
+            # Close and reopen to refresh the list
+            self._goals_dlg.open = False
+            self.page.update()
             await self._open_monthly_goals()
         except Exception as e:
             print(f"Error al guardar objetivo: {e}")
@@ -1055,7 +1057,8 @@ class CalendarScreen:
             await save_monthly_goal(
                 app_state.workspace_id, goal["year"], goal["month"], data
             )
-            self._close_goals_dialog(None)
+            self._goals_dlg.open = False
+            self.page.update()
             await self._open_monthly_goals()
 
         edit_dlg = ft.AlertDialog(
@@ -1085,7 +1088,8 @@ class CalendarScreen:
             await delete_goal_api(
                 app_state.workspace_id, goal["year"], goal["month"]
             )
-            self._close_goals_dialog(None)
+            self._goals_dlg.open = False
+            self.page.update()
             await self._open_monthly_goals()
 
         confirm_dlg = ft.AlertDialog(
@@ -1113,7 +1117,11 @@ class CalendarScreen:
         dlg.open = False
         self.page.update()
 
-    def _close_goals_dialog(self, e: ft.ControlEvent | None) -> None:
-        """Close the monthly goals dialog."""
-        self.page.overlay.clear()
-        self.page.update()
+    def _close_goals_dialog(self, e: ft.ControlEvent) -> None:
+        """Close the monthly goals dialog by setting open=False."""
+        if self.page.overlay:
+            for ctrl in self.page.overlay:
+                if isinstance(ctrl, ft.AlertDialog) and ctrl.open:
+                    ctrl.open = False
+                    self.page.update()
+                    return
