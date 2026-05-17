@@ -1140,16 +1140,13 @@ class CalendarScreen:
         self.page.update()
 
     def _clean_stale_dialogs(self) -> None:
-        """Remove any closed AlertDialogs from overlay to avoid interference."""
+        """Remove ALL AlertDialogs from overlay to avoid phantom reappearance.
+        Called before appending a new dialog (main or sub-dialog) to ensure
+        only the intended dialog is shown. Previously only removed closed
+        ones, but lingering open sub-dialogs would reappear later."""
         for i in range(len(self.page.overlay) - 1, -1, -1):
-            c = self.page.overlay[i]
-            if isinstance(c, ft.AlertDialog) and not c.open:
+            if isinstance(self.page.overlay[i], ft.AlertDialog):
                 self.page.overlay.pop(i)
-
-    def _close_subdialog(self, dlg: ft.AlertDialog) -> None:
-        """Close a sub-dialog (edit or confirm) by setting open=False."""
-        dlg.open = False
-        self.page.update()
 
     def _close_goals_dialog(self, e: ft.ControlEvent) -> None:
         """Close the monthly goals dialog."""
