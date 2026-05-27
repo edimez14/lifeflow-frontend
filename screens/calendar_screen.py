@@ -728,6 +728,8 @@ class CalendarScreen:
                 "start_datetime": sd.isoformat(),
                 "end_datetime": ed.isoformat(),
                 "color": color_f.value or None,
+                "category": event.get("category"),
+                "recurrence_rule": event.get("recurrence_rule"),
             }
             try:
                 await update_event(app_state.workspace_id, event["id"], data)
@@ -748,7 +750,9 @@ class CalendarScreen:
             ],
             actions_alignment=ft.MainAxisAlignment.END,
         )
-        self.page.open(dlg)
+        self.page.overlay.append(dlg)
+        dlg.open = True
+        self.page.update()
 
     async def _delete_event(self, event: dict) -> None:
         """Confirm and delete an event."""
@@ -766,13 +770,15 @@ class CalendarScreen:
             content=ft.Text(f"¿Eliminar \"{event.get('title', '')}\"?"),
             actions=[
                 ft.TextButton("Cancelar",
-                              on_click=lambda e: self.page.close(dlg)),
+                              on_click=lambda e: self._close_dialog_with(dlg)),
                 ft.Button("Eliminar",
                           on_click=lambda e: self.page.run_task(confirmar)),
             ],
             actions_alignment=ft.MainAxisAlignment.END,
         )
-        self.page.open(dlg)
+        self.page.overlay.append(dlg)
+        dlg.open = True
+        self.page.update()
 
     def _close_dialog(self, e: ft.ControlEvent) -> None:
         """Close the current dialog."""
@@ -782,6 +788,42 @@ class CalendarScreen:
                     ctrl.open = False
                     self.page.update()
                     return
+
+    def _close_dialog_with(self, dlg: ft.AlertDialog) -> None:
+        """Close a specific dialog."""
+        dlg.open = False
+        self.page.update()
+
+    # ------------------------------------------------------------------
+    # Helpers for recurrence RRULE generation
+    # ------------------------------------------------------------------
+    def _make_rrule_str(
+        self,
+        freq: str,
+        interval: int,
+        by_days: list[str] | None = None,
+        by_month_day: int | None = None,
+        by_month: int | None = None,
+        count: int | None = None,
+        until_date: str | None = None,
+    ) -> str:
+        """Build an iCal RRULE string from user selections."""
+        parts = [f"FREQ={freq}"]
+        if interval > 1:
+            parts.append(f"INTERVAL={interval}")
+        if by_days:
+            parts.append(f"BYDAY={','.join(by_days)}")
+        if by_month_day is not None and freq in ("MONTHLY", "YEARLY"):
+            parts.append(f"BYMONTHDAY={by_month_day}")
+        if by_month and freq == "YEARLY":
+            parts.append(f"BYMONTH={by_month}")
+        if count:
+            parts.append(f"COUNT={count}")
+        elif until_date:
+            parts.append(f"UNTIL={until_date.replace('-', '')}T235959Z")
+        result = ";".join(parts)
+        print(f"[RECURRENCE] _make_rrule_str: {result}")
+        return result
 
     # ------------------------------------------------------------------
     # Modal para crear nuevo evento (AlertDialog)
@@ -825,12 +867,166 @@ class CalendarScreen:
             key=c.get("value", c.get("name", "")),
             text=c.get("label", c.get("name", ""))
         ) for c in cats] if cats else []
+        color_f = ft.TextField(label="Color hex", value="#2196F3", width=140)
+
+        # ---- Recurrence UI (visible only when category == "repetitivo") ----
+        freq_options = [
+            ft.dropdown.Option("DAILY", "Diario"),
+            ft.dropdown.Option("WEEKLY", "Semanal"),
+            ft.dropdown.Option("MONTHLY", "Mensual"),
+            ft.dropdown.Option("YEARLY", "Anual"),
+            ft.dropdown.Option("FECHAS", "Fechas seleccionadas"),
+        ]
+        # Intervalo (cada N dias/semanas/meses)
+        interval_f = ft.TextField(
+            label="Cada (n)", value="1", width=80, keyboard_type=ft.KeyboardType.NUMBER)
+
+        # Dias de la semana (semanal) — RRULE requires English abbreviations
+        day_names = ["MO", "TU", "WE", "TH", "FR", "SA", "SU"]
+        day_labels = ["Lun", "Mar", "Mie", "Jue", "Vie", "Sab", "Dom"]
+        day_checks: list[ft.Checkbox] = []
+        for dn, dl in zip(day_names, day_labels):
+            cb = ft.Checkbox(label=dl, value=(
+                dn in ("MO", "TU", "WE", "TH", "FR")), width=55)
+            day_checks.append(cb)
+
+        # Dia del mes (mensual)
+        monthday_f = ft.TextField(label="Dia del mes", value=date.strftime(
+            "%d"), width=100, keyboard_type=ft.KeyboardType.NUMBER)
+
+        # Mes (anual)
+        month_f = ft.Dropdown(
+            label="Mes",
+            options=[ft.dropdown.Option(str(i), datetime(
+                2000, i, 1).strftime("%B")) for i in range(1, 13)],
+            value=str(date.month),
+            width=120,
+        )
+        anual_day_f = ft.TextField(label="Dia", value=date.strftime(
+            "%d"), width=80, keyboard_type=ft.KeyboardType.NUMBER)
+
+        # Fin de recurrencia
+        end_options = [
+            ft.dropdown.Option("COUNT", "Despues de N ocurrencias"),
+            ft.dropdown.Option("UNTIL", "Hasta fecha"),
+            ft.dropdown.Option("NEVER", "Nunca"),
+        ]
+        count_f = ft.TextField(label="Ocurrencias", value="10",
+                               width=100, keyboard_type=ft.KeyboardType.NUMBER)
+        until_f = ft.TextField(label="Hasta (YYYY-MM-DD)",
+                               width=140, hint_text="2025-12-31")
+
+        # Fechas seleccionadas
+        selected_dates: list[str] = [date_str]
+        selected_dates_text = ft.Text(
+            f"Fechas: {', '.join(selected_dates)}", size=13)
+        date_pick_f = ft.TextField(
+            label="Agregar fecha (YYYY-MM-DD)", width=180, hint_text=date_str)
+
+        def add_selected_date(_):
+            val = date_pick_f.value.strip() if date_pick_f.value else ""
+            if val and val not in selected_dates:
+                selected_dates.append(val)
+                selected_dates_text.value = f"Fechas: {', '.join(selected_dates)}"
+                date_pick_f.value = ""
+                print(f"[RECURRENCE] Added date: {val}, total: {len(selected_dates)}")
+            self.page.update()
+
+        add_date_btn = ft.Button("Agregar", on_click=add_selected_date)
+
+        # -- Frequency-specific controls container --
+        diario_controls = ft.Column([interval_f], spacing=6, visible=True)
+        semanal_controls = ft.Column(
+            [ft.Text("Dias:", size=13), ft.Row(
+                day_checks, spacing=4), interval_f],
+            spacing=6, visible=False,
+        )
+        mensual_controls = ft.Column(
+            [monthday_f, interval_f], spacing=6, visible=False)
+        anual_controls = ft.Column(
+            [month_f, anual_day_f], spacing=6, visible=False)
+        fechas_controls = ft.Column(
+            [ft.Row([date_pick_f, add_date_btn], spacing=4),
+             selected_dates_text],
+            spacing=6, visible=False,
+        )
+
+        # End condition controls
+        count_row = ft.Row([count_f], spacing=6, visible=True)
+        until_row = ft.Row([until_f], spacing=6, visible=False)
+
+        def _update_freq_visibility(freq_val: str):
+            print(f"[RECURRENCE] Frequency changed to: {freq_val}")
+            diario_controls.visible = (freq_val == "DAILY")
+            semanal_controls.visible = (freq_val == "WEEKLY")
+            mensual_controls.visible = (freq_val == "MONTHLY")
+            anual_controls.visible = (freq_val == "YEARLY")
+            fechas_controls.visible = (freq_val == "FECHAS")
+            show_end = freq_val != "FECHAS"
+            end_type_f.visible = show_end
+            count_row.visible = show_end and end_type_f.value == "COUNT"
+            until_row.visible = show_end and end_type_f.value == "UNTIL"
+            self.page.update()
+
+        def _on_freq_change(e):
+            _update_freq_visibility(e.control.value)
+
+        freq_f = ft.Dropdown(
+            label="Frecuencia",
+            options=freq_options,
+            value="DAILY",
+            width=200,
+            on_change=_on_freq_change,
+        )
+
+        def _on_end_type_change(e):
+            print(f"[RECURRENCE] End type changed to: {e.control.value}")
+            count_row.visible = (e.control.value == "COUNT")
+            until_row.visible = (e.control.value == "UNTIL")
+            self.page.update()
+
+        end_type_f = ft.Dropdown(
+            label="Finaliza",
+            options=end_options,
+            value="COUNT",
+            width=200,
+            on_change=_on_end_type_change,
+        )
+
+        recurrence_section = ft.Container(
+            visible=False,
+            border=ft.Border.all(1, ft.Colors.GREY_300),
+            border_radius=8,
+            padding=10,
+            content=ft.Column([
+                ft.Text("Configuracion de recurrencia",
+                        weight=ft.FontWeight.BOLD, size=14),
+                freq_f,
+                ft.Divider(height=4),
+                diario_controls,
+                semanal_controls,
+                mensual_controls,
+                anual_controls,
+                fechas_controls,
+                ft.Divider(height=4),
+                end_type_f,
+                count_row,
+                until_row,
+            ], spacing=8, tight=True),
+        )
+
+        def _on_cat_change(e):
+            is_repetitivo = (e.control.value == "repetitivo")
+            print(f"[RECURRENCE] Category changed to: {e.control.value}, showing recurrence: {is_repetitivo}")
+            recurrence_section.visible = is_repetitivo
+            self.page.update()
+
         cat_f = ft.Dropdown(
             label="Categoria",
             options=cat_options,
             value=None,
+            on_change=_on_cat_change,
         )
-        color_f = ft.TextField(label="Color hex", value="#2196F3", width=140)
 
         contenido = ft.Column([
             ft.Text("Nuevo evento", weight=ft.FontWeight.BOLD, size=18),
@@ -838,7 +1034,8 @@ class CalendarScreen:
             ft.Row([ft.Text(f"Fecha: {date_str}")], spacing=5),
             ft.Row([start_f, end_f], spacing=10),
             cal_f, cat_f, color_f,
-        ], spacing=10, tight=True, scroll=ft.ScrollMode.AUTO, width=350)
+            recurrence_section,
+        ], spacing=10, tight=True, scroll=ft.ScrollMode.AUTO, width=380)
 
         def cerrar_dlg():
             dlg.open = False
@@ -860,15 +1057,129 @@ class CalendarScreen:
                 title_f.error_text = "Selecciona calendario"
                 self.page.update()
                 return
+
+            cat_val = cat_f.value or None
+            # Build RRULE if repetitivo and not fechas
+            rrule_str = None
+            multiple_events: list[dict] = []
+            if cat_val == "repetitivo":
+                print(f"[RECURRENCE] Building recurrence rule, freq={freq_f.value}")
+                if freq_f.value == "FECHAS":
+                    # Create one event per selected date
+                    print(f"[RECURRENCE] Creating events for dates: {selected_dates}")
+                    for d_str in selected_dates:
+                        try:
+                            fd = datetime.fromisoformat(
+                                f"{d_str}T{start_f.value}:00")
+                            fe = datetime.fromisoformat(
+                                f"{d_str}T{end_f.value}:00")
+                        except Exception as ex:
+                            print(f"[RECURRENCE] Error parsing date {d_str}: {ex}")
+                            continue
+                        multiple_events.append({
+                            "calendar_id": cal_f.value,
+                            "title": title_f.value,
+                            "description": desc_f.value or None,
+                            "start_datetime": fd.isoformat(),
+                            "end_datetime": fe.isoformat(),
+                            "category": cat_val,
+                            "color": color_f.value or None,
+                            "recurrence_rule": None,
+                        })
+                    print(f"[RECURRENCE] Created {len(multiple_events)} individual events")
+                else:
+                    try:
+                        interval = int(
+                            interval_f.value) if interval_f.value else 1
+                    except ValueError:
+                        interval = 1
+                    if interval < 1:
+                        interval = 1
+
+                    by_days = None
+                    by_month_day = None
+                    by_month = None
+                    if freq_f.value == "WEEKLY":
+                        selected_days = [day_names[i]
+                                         for i, cb in enumerate(day_checks) if cb.value]
+                        if selected_days:
+                            by_days = selected_days
+                        else:
+                            by_days = ["MO"]
+                        print(f"[RECURRENCE] Weekly on days: {by_days}")
+                    elif freq_f.value == "MONTHLY":
+                        try:
+                            by_month_day = int(monthday_f.value)
+                        except ValueError:
+                            by_month_day = int(date.strftime("%d"))
+                        if by_month_day < 1:
+                            by_month_day = 1
+                        if by_month_day > 31:
+                            by_month_day = 31
+                        print(f"[RECURRENCE] Monthly on day: {by_month_day}")
+                    elif freq_f.value == "YEARLY":
+                        try:
+                            by_month = int(
+                                month_f.value) if month_f.value else date.month
+                        except ValueError:
+                            by_month = date.month
+                        try:
+                            by_month_day = int(anual_day_f.value)
+                        except ValueError:
+                            by_month_day = int(date.strftime("%d"))
+                        print(f"[RECURRENCE] Yearly on month={by_month}, day={by_month_day}")
+
+                    count_val = None
+                    until_val = None
+                    if end_type_f.value == "COUNT":
+                        try:
+                            count_val = int(count_f.value)
+                        except ValueError:
+                            count_val = 10
+                        print(f"[RECURRENCE] End after {count_val} occurrences")
+                    elif end_type_f.value == "UNTIL" and until_f.value:
+                        until_val = until_f.value.strip()
+                        print(f"[RECURRENCE] End until date: {until_val}")
+                    else:
+                        print(f"[RECURRENCE] No end condition (runs forever)")
+
+                    rrule_str = self._make_rrule_str(
+                        freq=freq_f.value,
+                        interval=interval,
+                        by_days=by_days,
+                        by_month_day=by_month_day,
+                        by_month=by_month,
+                        count=count_val,
+                        until_date=until_val,
+                    )
+                    print(f"[RECURRENCE] Generated RRULE: {rrule_str}")
+
+            if multiple_events:
+                # Create one event per selected date
+                print(f"[RECURRENCE] Sending {len(multiple_events)} individual events to backend")
+                for ev_data in multiple_events:
+                    try:
+                        await create_event(app_state.workspace_id, ev_data)
+                        print(f"[RECURRENCE] Created event: {ev_data['title']} on {ev_data['start_datetime']}")
+                    except Exception as ex:
+                        print(f"[RECURRENCE] Error creating event for fechas: {ex}")
+                cerrar_dlg()
+                await self._load_data()
+                return
+
             data = {
                 "calendar_id": cal_f.value, "title": title_f.value,
                 "description": desc_f.value or None,
                 "start_datetime": sd.isoformat(), "end_datetime": ed.isoformat(),
-                "category": cat_f.value or None, "color": color_f.value or None,
+                "category": cat_val, "color": color_f.value or None,
+                "recurrence_rule": rrule_str,
             }
+            print(f"[RECURRENCE] Sending event data: title={data['title']}, category={data['category']}, rrule={data['recurrence_rule']}")
             try:
                 await create_event(app_state.workspace_id, data)
+                print(f"[RECURRENCE] Event created successfully")
             except Exception as ex:
+                print(f"[RECURRENCE] Error creating event: {ex}")
                 title_f.error_text = f"Error: {ex}"
                 self.page.update()
                 return
@@ -887,7 +1198,9 @@ class CalendarScreen:
             ],
             actions_alignment=ft.MainAxisAlignment.END,
         )
-        self.page.open(dlg)
+        self.page.overlay.append(dlg)
+        dlg.open = True
+        self.page.update()
 
     # ------------------------------------------------------------------
     # Monthly goals
@@ -924,6 +1237,25 @@ class CalendarScreen:
         goal_items: list[ft.Control] = []
         for g in goals:
             month_name = calendar.month_name[g["month"]]
+            is_completed = g.get("is_completed", False)
+            status_icon = ft.Icon(
+                ft.Icons.CHECK_CIRCLE if is_completed else ft.Icons.RADIO_BUTTON_UNCHECKED,
+                color=ft.Colors.GREEN_400 if is_completed else ft.Colors.GREY_400,
+                size=18,
+            )
+            status_text = ft.Text(
+                "Completado" if is_completed else "Pendiente",
+                size=12,
+                color=ft.Colors.GREEN_400 if is_completed else ft.Colors.GREY_400,
+            )
+            toggle_btn = ft.IconButton(
+                icon=ft.Icons.TOGGLE_ON if is_completed else ft.Icons.TOGGLE_OFF_OUTLINED,
+                icon_size=20,
+                tooltip="Cambiar estado",
+                on_click=lambda e, goal=g: self.page.run_task(
+                    self._toggle_goal_status, goal
+                ),
+            )
             edit_btn = ft.IconButton(
                 icon=ft.Icons.EDIT,
                 icon_size=18,
@@ -943,6 +1275,11 @@ class CalendarScreen:
             goal_items.append(
                 ft.Container(
                     content=ft.Column([
+                        ft.Row(
+                            [status_icon, status_text],
+                            spacing=4,
+                            vertical_alignment=ft.CrossAxisAlignment.CENTER,
+                        ),
                         ft.Text(
                             f"{month_name} {g['year']}",
                             weight=ft.FontWeight.BOLD,
@@ -954,7 +1291,7 @@ class CalendarScreen:
                             color=ft.Colors.GREY_600,
                         ),
                         ft.Row(
-                            [edit_btn, delete_btn],
+                            [toggle_btn, edit_btn, delete_btn],
                             alignment=ft.MainAxisAlignment.END,
                         ),
                     ]),
@@ -1004,11 +1341,29 @@ class CalendarScreen:
             modal=True,
         )
         self._goals_dlg = dlg
-        # Remove stale closed AlertDialogs from overlay
-        self._clean_stale_dialogs()
         dlg.open = True
         self.page.overlay.append(dlg)
         self.page.update()
+
+    async def _toggle_goal_status(self, goal: dict) -> None:
+        """Toggle a goal between completed and pending."""
+        new_status = not goal.get("is_completed", False)
+        data = {
+            "goal_text": goal["goal_text"],
+            "action_plan": goal["action_plan"],
+            "is_completed": new_status,
+        }
+        try:
+            await update_monthly_goal(
+                app_state.workspace_id, goal["id"], data
+            )
+        except Exception as ex:
+            print(f"Error toggling goal status: {ex}")
+        # Close old dialog before reopening with fresh data
+        if self._goals_dlg:
+            self._goals_dlg.open = False
+            self.page.update()
+        await self._open_monthly_goals()
 
     async def _save_goal_from_dialog(self) -> None:
         """Save current month's goal and refresh the dialog."""
@@ -1035,7 +1390,6 @@ class CalendarScreen:
         if self._goals_dlg:
             self._goals_dlg.open = False
             self.page.update()
-        self._clean_stale_dialogs()
 
         goal_text_f = ft.TextField(
             label="Objetivo",
@@ -1054,11 +1408,11 @@ class CalendarScreen:
 
         async def _save_edit(_: ft.ControlEvent) -> None:
             edit_dlg.open = False
-            self._clean_stale_dialogs()
             self.page.update()
             data = {
                 "goal_text": goal_text_f.value or "",
                 "action_plan": action_f.value or "",
+                "is_completed": goal.get("is_completed", False),
             }
             try:
                 await update_monthly_goal(
@@ -1066,14 +1420,11 @@ class CalendarScreen:
                 )
             except Exception as ex:
                 print(f"Error saving goal: {ex}")
-            # Reopen main goals dialog with fresh data
             await self._open_monthly_goals()
 
         async def _cancel_edit(_: ft.ControlEvent) -> None:
             edit_dlg.open = False
-            self._clean_stale_dialogs()
             self.page.update()
-            # Reopen main goals dialog
             await self._open_monthly_goals()
 
         edit_dlg = ft.AlertDialog(
@@ -1100,11 +1451,9 @@ class CalendarScreen:
         if self._goals_dlg:
             self._goals_dlg.open = False
             self.page.update()
-        self._clean_stale_dialogs()
 
         async def _confirm(_: ft.ControlEvent) -> None:
             confirm_dlg.open = False
-            self._clean_stale_dialogs()
             self.page.update()
             try:
                 await delete_goal_api(
@@ -1112,14 +1461,11 @@ class CalendarScreen:
                 )
             except Exception as ex:
                 print(f"Error deleting goal: {ex}")
-            # Reopen main goals dialog with fresh data
             await self._open_monthly_goals()
 
         async def _cancel_delete(_: ft.ControlEvent) -> None:
             confirm_dlg.open = False
-            self._clean_stale_dialogs()
             self.page.update()
-            # Reopen main goals dialog
             await self._open_monthly_goals()
 
         confirm_dlg = ft.AlertDialog(
@@ -1138,14 +1484,6 @@ class CalendarScreen:
         confirm_dlg.open = True
         self.page.overlay.append(confirm_dlg)
         self.page.update()
-
-    def _clean_stale_dialogs(self) -> None:
-        """Remove any closed AlertDialogs from overlay to avoid interference.
-        Only removes closed ones (open=False), not open dialogs."""
-        for i in range(len(self.page.overlay) - 1, -1, -1):
-            c = self.page.overlay[i]
-            if isinstance(c, ft.AlertDialog) and not c.open:
-                self.page.overlay.pop(i)
 
     def _close_goals_dialog(self, e: ft.ControlEvent) -> None:
         """Close all AlertDialogs (main + any lingering sub-dialogs)."""

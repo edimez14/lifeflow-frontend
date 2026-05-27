@@ -38,6 +38,7 @@ async def update_monthly_goal(
         json={
             "goal_text": data.get("goal_text", ""),
             "action_plan": data.get("action_plan", ""),
+            "is_completed": data.get("is_completed", False),
         },
     )
     response.raise_for_status()

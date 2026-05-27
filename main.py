@@ -24,7 +24,7 @@ def _wire_timer_refs(timer: TimerWidget, page: ft.Page) -> None:
         pause_btn=timer._pause_btn,
         resume_btn=timer._resume_btn,
         cancel_btn=timer._cancel_btn,
-        start_btn=timer._start_without_task_btn,
+        start_btn=timer._play_btn,
         page=page,
     )
 
